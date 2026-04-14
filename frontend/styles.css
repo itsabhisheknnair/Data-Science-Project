@@ -649,6 +649,44 @@ button:disabled {
 .biz-card.negative strong { color: var(--negative); }
 .biz-card.neutral  strong { color: var(--accent); }
 
+.business-value-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.business-value-card {
+  display: grid;
+  gap: 8px;
+  min-height: 132px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+.business-value-card span {
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.business-value-card strong {
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+.business-value-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .84rem;
+  line-height: 1.45;
+}
+.business-note-card {
+  background: var(--accent-soft);
+  border-color: rgba(13, 107, 98, .28);
+}
+
 /* ── Model label cells ──────────────────────────────────────────────────── */
 .model-label { display: grid; gap: 3px; }
 .model-label strong { font-size: .93rem; }
@@ -671,7 +709,14 @@ button:disabled {
 .plain-read { max-width: 280px; color: #3a4248; line-height: 1.45; font-size: .88rem; }
 
 /* ── Risk bars ──────────────────────────────────────────────────────────── */
-.risk-bars { display: grid; gap: 11px; }
+.risk-bars {
+  display: grid;
+  gap: 11px;
+  max-height: 414px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
 
 .bar-row {
   display: grid;
@@ -695,6 +740,17 @@ button:disabled {
 
 /* ── Table shell ────────────────────────────────────────────────────────── */
 .table-shell { overflow-x: auto; }
+.score-table-shell {
+  max-height: 520px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.score-table-shell thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
 
 table { width: 100%; border-collapse: collapse; min-width: 680px; }
 th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
@@ -753,6 +809,7 @@ td { font-size: .9rem; line-height: 1.45; }
   .lift-summary-grid,
   .sample-guide-grid,
   .biz-summary-grid,
+  .business-value-grid,
   .metric-guide,
   .chart-layout { grid-template-columns: 1fr; }
 

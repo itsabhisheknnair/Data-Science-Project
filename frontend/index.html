@@ -250,7 +250,8 @@
         </div>
         <div>
           <label for="tickerSearch">Ticker</label>
-          <input id="tickerSearch" type="search" placeholder="Search ticker">
+          <input id="tickerSearch" type="search" placeholder="Search or choose ticker" list="tickerOptions">
+          <datalist id="tickerOptions"></datalist>
         </div>
       </section>
 
@@ -294,7 +295,7 @@
           </div>
           <p id="resultCount" class="status-text">0 rows</p>
         </div>
-        <div class="table-shell">
+        <div class="table-shell score-table-shell">
           <table>
             <thead>
               <tr>
@@ -415,6 +416,7 @@
           AUM assumption: <strong>$1 billion</strong>. Implementation team: 4 people at $200k each.
         </p>
         <div id="bizSummary" class="biz-summary-grid"></div>
+        <div id="bizHighlights" class="business-value-grid"></div>
         <div class="table-shell">
           <table>
             <thead>

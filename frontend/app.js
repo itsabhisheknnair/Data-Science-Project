@@ -146,6 +146,7 @@ const liveProgressBar   = document.querySelector("#liveProgressBar");
 const liveProgressHint  = document.querySelector("#liveProgressHint");
 const bucketFilter      = document.querySelector("#bucketFilter");
 const tickerSearch      = document.querySelector("#tickerSearch");
+const tickerOptions     = document.querySelector("#tickerOptions");
 const dataStatus        = document.querySelector("#dataStatus");
 const priceStatus       = document.querySelector("#priceStatus");
 const chartStatus       = document.querySelector("#chartStatus");
@@ -163,6 +164,7 @@ const importanceStatus  = document.querySelector("#importanceStatus");
 const importanceBars    = document.querySelector("#importanceBars");
 const bizStatus         = document.querySelector("#bizStatus");
 const bizSummary        = document.querySelector("#bizSummary");
+const bizHighlights     = document.querySelector("#bizHighlights");
 const bizRowsBody       = document.querySelector("#bizRows");
 const metricTotal       = document.querySelector("#metricTotal");
 const metricHigh        = document.querySelector("#metricHigh");
@@ -445,6 +447,12 @@ function driverPills(drivers) {
 }
 
 /* ── Filtering ─────────────────────────────────────────────────────────── */
+function renderTickerOptions() {
+  if (!tickerOptions) return;
+  const tickers = [...new Set(allRows.map(r => r.ticker).filter(Boolean))].sort();
+  tickerOptions.innerHTML = tickers.map(ticker => `<option value="${escapeHtml(ticker)}"></option>`).join("");
+}
+
 function filteredRows() {
   const bucket = bucketFilter.value;
   const search = tickerSearch.value.trim().toUpperCase();
@@ -517,7 +525,7 @@ function renderMetrics(rows) {
 
 /* ── Top-names bar chart ───────────────────────────────────────────────── */
 function renderBars(rows) {
-  const top = [...rows].sort((a, b) => b.crash_probability - a.crash_probability).slice(0, 10);
+  const top = [...rows].sort((a, b) => b.crash_probability - a.crash_probability);
   if (!top.length) { riskBars.innerHTML = '<div class="empty-state">No matching scores.</div>'; return; }
   riskBars.innerHTML = top.map(r => {
     const w = Math.max(3, Math.round(r.crash_probability * 100));
@@ -778,10 +786,69 @@ const BIZ_LABELS = {
 };
 
 const BIZ_SUMMARY_KEYS = ["alpha_annualized", "strategy_sharpe", "economic_gain_annual"];
+const BIZ_TABLE_EXCLUDED = new Set(["business_analysis_note"]);
+
+function formatBizMetric(metric, raw) {
+  const v = parseFloat(raw);
+  if ([
+    "strategy_annual_return",
+    "benchmark_annual_return",
+    "alpha_annualized",
+    "high_risk_excluded_pct",
+    "max_drawdown_strategy",
+    "max_drawdown_benchmark",
+    "drawdown_improvement",
+    "var_95_weekly",
+    "cvar_95_weekly",
+  ].includes(metric))
+    return Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : raw;
+  if (["fund_aum","economic_gain_annual","team_annual_cost"].includes(metric))
+    return Number.isFinite(v) ? `$${v.toLocaleString()}` : raw;
+  if (metric === "team_roi" && Number.isFinite(v))
+    return `${v.toFixed(2)}x`;
+  return raw;
+}
+
+function renderBizHighlights(lookup) {
+  if (!bizHighlights) return;
+  const note = lookup.business_analysis_note || "Illustrative gross overlay result; not a guaranteed return forecast.";
+  const cards = [
+    {
+      title: "Overlay return",
+      value: formatBizMetric("strategy_annual_return", lookup.strategy_annual_return ?? "-"),
+      detail: `Benchmark: ${formatBizMetric("benchmark_annual_return", lookup.benchmark_annual_return ?? "-")} | Alpha: ${formatBizMetric("alpha_annualized", lookup.alpha_annualized ?? "-")}`,
+    },
+    {
+      title: "Risk control",
+      value: formatBizMetric("max_drawdown_strategy", lookup.max_drawdown_strategy ?? "-"),
+      detail: `Benchmark drawdown: ${formatBizMetric("max_drawdown_benchmark", lookup.max_drawdown_benchmark ?? "-")} | Weekly CVaR: ${formatBizMetric("cvar_95_weekly", lookup.cvar_95_weekly ?? "-")}`,
+    },
+    {
+      title: "Business case",
+      value: formatBizMetric("economic_gain_annual", lookup.economic_gain_annual ?? "-"),
+      detail: `Team cost: ${formatBizMetric("team_annual_cost", lookup.team_annual_cost ?? "-")} | ROI: ${formatBizMetric("team_roi", lookup.team_roi ?? "-")}`,
+    },
+  ];
+
+  bizHighlights.innerHTML = `
+    ${cards.map(card => `
+      <article class="business-value-card">
+        <span>${escapeHtml(card.title)}</span>
+        <strong>${escapeHtml(card.value)}</strong>
+        <p>${escapeHtml(card.detail)}</p>
+      </article>
+    `).join("")}
+    <article class="business-value-card business-note-card">
+      <span>How to read this</span>
+      <strong>Illustrative overlay</strong>
+      <p>${escapeHtml(note)}</p>
+    </article>`;
+}
 
 function renderBizAnalysis() {
   if (!bizRows.length) {
     bizSummary.innerHTML = '<div class="empty-state">No business analysis loaded.</div>';
+    if (bizHighlights) bizHighlights.innerHTML = "";
     bizRowsBody.innerHTML = '<tr><td colspan="2" class="empty-state">No business analysis loaded.</td></tr>';
     return;
   }
@@ -807,18 +874,19 @@ function renderBizAnalysis() {
     }
     return `<article class="biz-card ${cls}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(display)}</strong></article>`;
   }).join("");
+  renderBizHighlights(lookup);
 
   // Full table
-  bizRowsBody.innerHTML = bizRows.map(r => {
+  bizRowsBody.innerHTML = bizRows.filter(r => !BIZ_TABLE_EXCLUDED.has(r.metric)).map(r => {
     const label = BIZ_LABELS[r.metric] || r.metric;
-    let display = r.value;
+    let display = formatBizMetric(r.metric, r.value);
     const v = parseFloat(r.value);
     if (["strategy_annual_return","benchmark_annual_return","alpha_annualized","high_risk_excluded_pct"].includes(r.metric))
       display = Number.isFinite(v) ? `${(v*100).toFixed(2)}%` : r.value;
     else if (["fund_aum","economic_gain_annual","team_annual_cost"].includes(r.metric))
       display = Number.isFinite(v) ? `$${v.toLocaleString()}` : r.value;
     else if (r.metric === "team_roi" && Number.isFinite(v))
-      display = `${v.toFixed(2)}×`;
+      display = `${v.toFixed(2)}x`;
     return `<tr><td>${escapeHtml(label)}</td><td style="font-variant-numeric:tabular-nums">${escapeHtml(display)}</td></tr>`;
   }).join("");
 }
@@ -1061,6 +1129,7 @@ function setRows(rows, msg) {
   allRows = rows.map(normalizeScore).filter(r => r.ticker);
   selectedTicker = defaultTicker(allRows);
   dataStatus.textContent = msg;
+  renderTickerOptions();
   render();
 }
 
