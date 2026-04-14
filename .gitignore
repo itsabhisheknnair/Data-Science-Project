@@ -11,7 +11,9 @@ venv/
 data/raw/*
 data/processed/*
 outputs/*
+frontend/outputs/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !outputs/.gitkeep
+!frontend/outputs/.gitkeep
 Research Paper/*.pdf

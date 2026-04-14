@@ -90,6 +90,14 @@ let selectedTicker = "";
 /* ── DOM refs ──────────────────────────────────────────────────────────── */
 const uploadInput       = document.querySelector("#scoreUpload");
 const historyUploadInput = document.querySelector("#historyUpload");
+const apiUploadForm     = document.querySelector("#apiUploadForm");
+const apiBaseUrl        = document.querySelector("#apiBaseUrl");
+const rawPrices         = document.querySelector("#rawPrices");
+const rawBenchmark      = document.querySelector("#rawBenchmark");
+const rawFundamentals   = document.querySelector("#rawFundamentals");
+const rawControversies  = document.querySelector("#rawControversies");
+const apiTune           = document.querySelector("#apiTune");
+const apiStatus         = document.querySelector("#apiStatus");
 const bucketFilter      = document.querySelector("#bucketFilter");
 const tickerSearch      = document.querySelector("#tickerSearch");
 const dataStatus        = document.querySelector("#dataStatus");
@@ -250,10 +258,38 @@ function ensureSelectedTicker() {
   }
 }
 
+function selectTickerFromFilters({ preferSearch = false } = {}) {
+  const rows = filteredRows();
+  const search = tickerSearch.value.trim().toUpperCase();
+
+  if (preferSearch && search) {
+    const exact = rows.find(r => r.ticker === search) || allRows.find(r => r.ticker === search);
+    if (exact) {
+      selectedTicker = exact.ticker;
+      return rows;
+    }
+
+    if (rows.length) {
+      selectedTicker = defaultTicker(rows);
+      return rows;
+    }
+  }
+
+  if (rows.length && !rows.some(r => r.ticker === selectedTicker)) {
+    selectedTicker = defaultTicker(rows);
+  }
+
+  if (!rows.length) {
+    ensureSelectedTicker();
+  }
+
+  return rows;
+}
+
 /* ── Render orchestration ──────────────────────────────────────────────── */
 function render() {
   ensureSelectedTicker();
-  const rows = filteredRows();
+  const rows = selectTickerFromFilters();
   renderMetrics(allRows);
   renderBars(rows);
   renderTable(rows);
@@ -604,6 +640,54 @@ function setBizRows(rows, msg) {
 }
 
 /* ── File I/O ──────────────────────────────────────────────────────────── */
+function selectedFile(input, label) {
+  const [file] = Array.from(input.files || []);
+  if (!file) throw new Error(`Choose ${label}.`);
+  return file;
+}
+
+function apiEndpoint() {
+  const base = apiBaseUrl.value.trim().replace(/\/+$/, "");
+  if (!base) throw new Error("Add the Render API URL first.");
+  return `${base}/predict`;
+}
+
+async function runLiveApiScore(event) {
+  event.preventDefault();
+
+  const form = new FormData();
+  try {
+    form.append("prices", selectedFile(rawPrices, "prices"));
+    form.append("benchmark_prices", selectedFile(rawBenchmark, "benchmark_prices"));
+    form.append("fundamentals", selectedFile(rawFundamentals, "fundamentals"));
+    form.append("controversies", selectedFile(rawControversies, "controversies"));
+    form.append("tune", apiTune.checked ? "true" : "false");
+  } catch (err) {
+    apiStatus.textContent = err.message;
+    return;
+  }
+
+  apiStatus.textContent = "Scoring raw files with the Python backend...";
+  try {
+    const response = await fetch(apiEndpoint(), { method: "POST", body: form });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = Array.isArray(payload.detail) ? payload.detail.map(d => d.msg || d.detail || d).join("; ") : payload.detail;
+      throw new Error(detail || `API request failed with status ${response.status}.`);
+    }
+
+    setRows(payload.scores || [], `Loaded ${payload.scores?.length || 0} scores from Render API.`);
+    setPriceData(payload.price_history || [], payload.price_scenarios || [], "Loaded live price history and scenarios.");
+    setComparisonRows(payload.model_comparison || [], "Loaded live ESG comparison.");
+    setAlgoRows(payload.algorithm_comparison || [], "Loaded live algorithm comparison.");
+    setImportanceRows(payload.feature_importance || [], "Loaded live feature importance.");
+    setBizRows(payload.business_analysis || [], "Loaded live business analysis.");
+    apiStatus.textContent = `Scored ${payload.metadata?.score_count || 0} rows from raw uploaded data.`;
+  } catch (err) {
+    apiStatus.textContent = `API scoring failed: ${err.message}`;
+  }
+}
+
 function loadUploadedFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -632,9 +716,21 @@ async function loadCsv(path) {
   return parseCsvRecords(await res.text());
 }
 
+async function loadCsvFirst(paths) {
+  let lastError = null;
+  for (const path of paths) {
+    try {
+      return await loadCsv(path);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("No CSV path supplied");
+}
+
 async function loadDefaultScores() {
   try {
-    const rows = await loadCsv("../outputs/stock_scores.csv");
+    const rows = await loadCsvFirst(["outputs/stock_scores.csv", "../outputs/stock_scores.csv"]);
     if (!rows.length) throw new Error("empty");
     setRows(rows, `Loaded ${rows.length} scores from outputs/stock_scores.csv.`);
   } catch { setRows(DEMO_ROWS, "Showing demo scores. Upload outputs/stock_scores.csv after a backend run."); }
@@ -642,7 +738,10 @@ async function loadDefaultScores() {
 
 async function loadDefaultPriceData() {
   try {
-    const [h, s] = await Promise.all([loadCsv("../outputs/price_history.csv"), loadCsv("../outputs/price_scenarios.csv")]);
+    const [h, s] = await Promise.all([
+      loadCsvFirst(["outputs/price_history.csv", "../outputs/price_history.csv"]),
+      loadCsvFirst(["outputs/price_scenarios.csv", "../outputs/price_scenarios.csv"]),
+    ]);
     setPriceData(h, s, `Loaded ${h.length} history and ${s.length} scenario rows.`);
   } catch {
     setPriceData(DEMO_PRICE_HISTORY, DEMO_PRICE_SCENARIOS, "Showing demo prices. Serve the folder or upload price files.");
@@ -651,7 +750,7 @@ async function loadDefaultPriceData() {
 
 async function loadDefaultComparison() {
   try {
-    const rows = await loadCsv("../outputs/esg_model_comparison.csv");
+    const rows = await loadCsvFirst(["outputs/esg_model_comparison.csv", "../outputs/esg_model_comparison.csv"]);
     if (!rows.length) throw new Error("empty");
     setComparisonRows(rows, `Loaded ${rows.length} ESG comparison rows.`);
   } catch { setComparisonRows(DEMO_COMPARISON_ROWS, "Showing demo ESG lift. Run backend to replace."); }
@@ -659,7 +758,7 @@ async function loadDefaultComparison() {
 
 async function loadDefaultAlgoComparison() {
   try {
-    const rows = await loadCsv("../outputs/algorithm_comparison.csv");
+    const rows = await loadCsvFirst(["outputs/algorithm_comparison.csv", "../outputs/algorithm_comparison.csv"]);
     if (!rows.length) throw new Error("empty");
     setAlgoRows(rows, `Loaded ${rows.length} algorithm comparison rows.`);
   } catch { setAlgoRows(DEMO_ALGO_ROWS, "Showing demo algorithm comparison. Run backend to replace."); }
@@ -667,7 +766,7 @@ async function loadDefaultAlgoComparison() {
 
 async function loadDefaultImportance() {
   try {
-    const rows = await loadCsv("../outputs/feature_importance.csv");
+    const rows = await loadCsvFirst(["outputs/feature_importance.csv", "../outputs/feature_importance.csv"]);
     if (!rows.length) throw new Error("empty");
     setImportanceRows(rows, `Loaded ${rows.length} feature importance rows.`);
   } catch { setImportanceRows(DEMO_IMPORTANCE, "Showing demo feature importance. Run backend to replace."); }
@@ -675,7 +774,7 @@ async function loadDefaultImportance() {
 
 async function loadDefaultBizAnalysis() {
   try {
-    const rows = await loadCsv("../outputs/business_analysis.csv");
+    const rows = await loadCsvFirst(["outputs/business_analysis.csv", "../outputs/business_analysis.csv"]);
     if (!rows.length) throw new Error("empty");
     setBizRows(rows, `Loaded ${rows.length} business analysis rows.`);
   } catch { setBizRows(DEMO_BIZ_ROWS, "Showing demo business analysis. Run backend to replace."); }
@@ -690,8 +789,15 @@ historyUploadInput.addEventListener("change", e => {
   const files = Array.from(e.target.files || []);
   if (files.length) loadUploadedPriceFiles(files);
 });
-bucketFilter.addEventListener("change", render);
-tickerSearch.addEventListener("input", render);
+apiUploadForm.addEventListener("submit", runLiveApiScore);
+bucketFilter.addEventListener("change", () => {
+  selectTickerFromFilters({ preferSearch: true });
+  render();
+});
+tickerSearch.addEventListener("input", () => {
+  selectTickerFromFilters({ preferSearch: true });
+  render();
+});
 
 /* ── Boot ──────────────────────────────────────────────────────────────── */
 loadDefaultScores();

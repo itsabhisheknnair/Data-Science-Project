@@ -53,6 +53,45 @@
       </section>
 
       <!-- ── Summary KPIs ─────────────────────────────────────────────── -->
+      <section class="api-panel" aria-label="Live backend upload">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Render API</p>
+            <h2>Upload raw Bloomberg-style files</h2>
+          </div>
+          <p id="apiStatus" class="status-text">Connect a Python API to score fresh raw inputs.</p>
+        </div>
+        <form id="apiUploadForm" class="api-form">
+          <div>
+            <label for="apiBaseUrl">API URL</label>
+            <input id="apiBaseUrl" type="url" placeholder="https://your-service.onrender.com">
+          </div>
+          <div>
+            <label for="rawPrices">prices</label>
+            <input id="rawPrices" type="file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div>
+            <label for="rawBenchmark">benchmark_prices</label>
+            <input id="rawBenchmark" type="file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div>
+            <label for="rawFundamentals">fundamentals</label>
+            <input id="rawFundamentals" type="file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div>
+            <label for="rawControversies">controversies</label>
+            <input id="rawControversies" type="file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div class="api-actions">
+            <label class="checkbox-label">
+              <input id="apiTune" type="checkbox">
+              Tune models
+            </label>
+            <button type="submit">Run live score</button>
+          </div>
+        </form>
+      </section>
+
       <section class="metrics-grid" aria-label="Risk summary">
         <article class="metric-tile">
           <span>Total names</span>
@@ -132,7 +171,32 @@
         </div>
       </section>
 
-      <!-- ── Feature importance ────────────────────────────────────────── -->
+      <!-- Stock scores table -->
+      <section class="table-section" aria-label="Stock scores">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Scored universe</p>
+            <h2>Stock risk table</h2>
+          </div>
+          <p id="resultCount" class="status-text">0 rows</p>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>As of</th>
+                <th>Probability</th>
+                <th>Bucket</th>
+                <th>Top drivers</th>
+              </tr>
+            </thead>
+            <tbody id="scoreRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Feature importance -->
       <section class="risk-panel importance-section" aria-label="Feature importance">
         <div class="section-heading">
           <div>
@@ -248,30 +312,6 @@
         </div>
       </section>
 
-      <!-- ── Stock scores table ────────────────────────────────────────── -->
-      <section class="table-section" aria-label="Stock scores">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Scored universe</p>
-            <h2>Stock risk table</h2>
-          </div>
-          <p id="resultCount" class="status-text">0 rows</p>
-        </div>
-        <div class="table-shell">
-          <table>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>As of</th>
-                <th>Probability</th>
-                <th>Bucket</th>
-                <th>Top drivers</th>
-              </tr>
-            </thead>
-            <tbody id="scoreRows"></tbody>
-          </table>
-        </div>
-      </section>
     </main>
 
     <script src="app.js"></script>

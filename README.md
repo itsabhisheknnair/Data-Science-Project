@@ -65,6 +65,64 @@ The price graph is a 13-week scenario range based on historical volatility and c
 
 The ESG model comparison report is the key research artifact for testing whether controversy features add signal beyond the non-ESG crash-risk benchmark.
 
+## Netlify Demo Deployment
+
+This repo is prepared for a static Netlify demo with `netlify.toml`.
+
+Netlify will:
+
+- install the Python package during the build
+- run `python -m crashrisk.demo`
+- write demo dashboard CSV files into `frontend/outputs/`
+- publish the `frontend/` folder
+
+Deploy settings:
+
+- Build command: handled by `netlify.toml`
+- Publish directory: `frontend`
+
+Recommended deploy path: connect the GitHub repo to Netlify so the build command runs automatically.
+
+If you use Netlify drag-and-drop instead, run this first and then upload the `frontend/` folder:
+
+```powershell
+C:\Users\itsab\anaconda3\python.exe -m crashrisk.demo --processed-dir data/processed --outputs-dir frontend/outputs
+```
+
+This is enough for a polished demo site. It does not create a live Python prediction API.
+
+## Do We Need Render?
+
+For the current demo, no. Netlify can host the dashboard and pre-generated demo outputs.
+
+For a real product where a user uploads raw Bloomberg-style files and receives a fresh model score on demand, yes, use a Python backend host such as Render, Railway, Fly.io, AWS, or similar. Netlify would host the frontend, and the frontend would call that backend API.
+
+This repo now includes a Render-style FastAPI service:
+
+- App path: `crashrisk.api.main:app`
+- Health check: `/health`
+- Input schema: `/schema`
+- Live scoring endpoint: `POST /predict`
+- Render config: `render.yaml`
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn crashrisk.api.main:app --host 0.0.0.0 --port $PORT`
+
+`POST /predict` expects a multipart form with these file fields:
+
+- `prices`
+- `benchmark_prices`
+- `fundamentals`
+- `controversies`
+
+Once the Render service is deployed, paste its base URL into the dashboard's API URL field, upload the four raw files, and run a live score. The frontend will replace the static demo outputs with the API response.
+
+Important input limitation:
+
+- Price history alone is not enough for the full ESG crash-risk prediction.
+- The full model needs `prices`, `benchmark_prices`, `fundamentals`, and `controversies`.
+- If you only provide price history, the app can show a historical price chart and a volatility-style scenario range, but it cannot make the full ESG controversy crash-risk score credibly.
+- The current browser upload controls load already-produced dashboard CSVs, not raw Bloomberg input files. Raw file ingestion and model training currently happen in the Python backend.
+
 ## Test
 
 ```powershell

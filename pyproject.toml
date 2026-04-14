@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "crashrisk-mvp"
 version = "0.1.0"
@@ -9,6 +13,9 @@ dependencies = [
   "pyarrow",
   "openpyxl",
   "scikit-learn",
+  "fastapi",
+  "uvicorn[standard]",
+  "python-multipart",
 ]
 
 [tool.pytest.ini_options]

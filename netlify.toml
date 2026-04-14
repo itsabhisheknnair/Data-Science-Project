@@ -1,0 +1,6 @@
+[build]
+  publish = "frontend"
+  command = "python -m pip install -e . && python -m crashrisk.demo --processed-dir data/processed --outputs-dir frontend/outputs"
+
+[build.environment]
+  PYTHON_VERSION = "3.11"

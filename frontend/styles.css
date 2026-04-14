@@ -83,7 +83,7 @@ h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
 }
 
 /* ── Section spacing ───────────────────────────────────────────────────── */
-.toolbar, .metrics-grid, .dashboard-grid,
+.toolbar, .api-panel, .metrics-grid, .dashboard-grid,
 .chart-section, .comparison-section, .importance-section,
 .table-section { margin-top: 20px; }
 
@@ -102,7 +102,7 @@ h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
 
 label { display: block; margin-bottom: 6px; font-size: .84rem; font-weight: 700; }
 
-input, select {
+input, select, button {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
@@ -113,7 +113,17 @@ input, select {
   font: inherit;
   transition: border-color .15s;
 }
-input:focus, select:focus { outline: none; border-color: var(--accent); }
+input:focus, select:focus, button:focus { outline: none; border-color: var(--accent); }
+input[type="checkbox"] { width: auto; min-height: 0; }
+
+button {
+  cursor: pointer;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+button:hover { background: #0a5952; }
 
 .status-text { margin: 7px 0 0; color: var(--muted); font-size: .85rem; line-height: 1.4; }
 
@@ -143,13 +153,34 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 }
 
 /* ── Panels ────────────────────────────────────────────────────────────── */
-.risk-panel, .chart-section, .comparison-section,
+.risk-panel, .api-panel, .chart-section, .comparison-section,
 .importance-section, .table-section {
   padding: 20px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+.api-form {
+  display: grid;
+  grid-template-columns: minmax(220px,1.2fr) repeat(4, minmax(140px,1fr)) minmax(150px,.8fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.api-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .section-heading {
@@ -380,6 +411,7 @@ td { font-size: .9rem; line-height: 1.45; }
 @media (max-width: 900px) {
   .app-header,
   .toolbar,
+  .api-form,
   .metrics-grid,
   .dashboard-grid,
   .comparison-explainer,
@@ -395,7 +427,7 @@ td { font-size: .9rem; line-height: 1.45; }
 
 @media (max-width: 520px) {
   .app-header, main { width: min(100% - 18px, 1200px); }
-  .toolbar, .risk-panel, .chart-section, .comparison-section,
+  .toolbar, .api-panel, .risk-panel, .chart-section, .comparison-section,
   .importance-section, .table-section, .metric-tile { padding: 12px; }
   .bar-row { grid-template-columns: 56px minmax(0,1fr) 54px; gap: 8px; }
 }
