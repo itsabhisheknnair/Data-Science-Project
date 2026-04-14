@@ -1,0 +1,4 @@
+ticker,as_of_date,crash_probability,risk_bucket,top_drivers
+AAPL,2024-12-27,0.31,Low,market_cap;roa;controversy_score
+MSFT,2024-12-27,0.44,Medium,realized_volatility;trailing_return;beta
+TSLA,2024-12-27,0.72,High,controversy_spike_flag;downside_beta;detrended_turnover

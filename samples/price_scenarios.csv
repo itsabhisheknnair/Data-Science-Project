@@ -1,0 +1,4 @@
+ticker,as_of_date,latest_price,horizon_weeks,price_p05,price_p50,price_p95,crash_probability,risk_bucket,scenario_method
+AAPL,2024-12-27,255.59,13,219.40,255.59,286.12,0.31,Low,volatility_crash_adjusted
+MSFT,2024-12-27,430.53,13,360.22,430.53,492.88,0.44,Medium,volatility_crash_adjusted
+TSLA,2024-12-27,431.66,13,286.31,431.66,566.74,0.72,High,volatility_crash_adjusted

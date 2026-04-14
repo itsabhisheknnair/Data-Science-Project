@@ -91,7 +91,6 @@ let selectedTicker = "";
 const uploadInput       = document.querySelector("#scoreUpload");
 const historyUploadInput = document.querySelector("#historyUpload");
 const apiUploadForm     = document.querySelector("#apiUploadForm");
-const apiBaseUrl        = document.querySelector("#apiBaseUrl");
 const rawPrices         = document.querySelector("#rawPrices");
 const rawBenchmark      = document.querySelector("#rawBenchmark");
 const rawFundamentals   = document.querySelector("#rawFundamentals");
@@ -126,6 +125,7 @@ const latestPrice       = document.querySelector("#latestPrice");
 const priceP05          = document.querySelector("#priceP05");
 const priceP50          = document.querySelector("#priceP50");
 const priceP95          = document.querySelector("#priceP95");
+const API_BASE_URL      = "https://crashrisk-api.onrender.com";
 
 /* ── CSV parser ────────────────────────────────────────────────────────── */
 function parseCsvRecords(text) {
@@ -647,9 +647,7 @@ function selectedFile(input, label) {
 }
 
 function apiEndpoint() {
-  const base = apiBaseUrl.value.trim().replace(/\/+$/, "");
-  if (!base) throw new Error("Add the Render API URL first.");
-  return `${base}/predict`;
+  return `${API_BASE_URL}/predict`;
 }
 
 async function runLiveApiScore(event) {

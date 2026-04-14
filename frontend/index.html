@@ -56,16 +56,12 @@
       <section class="api-panel" aria-label="Live backend upload">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Render API</p>
+            <p class="eyebrow">Live scoring</p>
             <h2>Upload raw Bloomberg-style files</h2>
           </div>
-          <p id="apiStatus" class="status-text">Connect a Python API to score fresh raw inputs.</p>
+          <p id="apiStatus" class="status-text">Using the hosted Python model backend.</p>
         </div>
         <form id="apiUploadForm" class="api-form">
-          <div>
-            <label for="apiBaseUrl">API URL</label>
-            <input id="apiBaseUrl" type="url" placeholder="https://your-service.onrender.com">
-          </div>
           <div>
             <label for="rawPrices">prices</label>
             <input id="rawPrices" type="file" accept=".csv,.xlsx,.xls">

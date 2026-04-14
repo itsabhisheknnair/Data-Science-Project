@@ -164,7 +164,7 @@ button:hover { background: #0a5952; }
 
 .api-form {
   display: grid;
-  grid-template-columns: minmax(220px,1.2fr) repeat(4, minmax(140px,1fr)) minmax(150px,.8fr);
+  grid-template-columns: repeat(4, minmax(140px,1fr)) minmax(150px,.8fr);
   gap: 14px;
   align-items: end;
 }
