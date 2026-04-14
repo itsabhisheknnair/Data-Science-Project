@@ -1,0 +1,9 @@
+Current Gaps
+The main weakness is that we are using demo/synthetic data right now. To make the research claim credible, we need real Bloomberg ESG controversy data and a proper out-of-sample test showing whether controversy features improve crash-risk prediction over a non-ESG benchmark.
+
+The next best research step is to compare:
+
+Baseline model without ESG controversy features.
+Full model with ESG controversy features.
+Report ROC-AUC, Precision@TopK, and top-risk bucket crash capture.
+If the full model improves those metrics, then we have a clean “ESG controversy adds risk signal” result.

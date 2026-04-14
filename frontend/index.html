@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESG Crash-Risk Monitor</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-copy">
+        <p class="eyebrow">FIN42110 &mdash; Financial Data Science for Trading &amp; Risk Management</p>
+        <h1>ESG Crash-Risk Monitor</h1>
+        <p class="lede">
+          Stock-level crash probabilities driven by ESG controversy signals, downside-risk metrics,
+          and fundamental factors. Trained on Chen, Hong &amp; Stein (2001) crash-risk features
+          augmented with Kim, Li &amp; Zhang (2014) ESG controversy measures.
+        </p>
+      </div>
+      <img
+        class="header-image"
+        src="https://images.unsplash.com/photo-1642790551116-18e150f248e3?auto=format&fit=crop&w=900&q=80"
+        alt="Trading desk with market data screens"
+      >
+    </header>
+
+    <main>
+      <!-- ── Toolbar ──────────────────────────────────────────────────── -->
+      <section class="toolbar" aria-label="Score controls">
+        <div>
+          <label for="scoreUpload">Load stock_scores.csv</label>
+          <input id="scoreUpload" type="file" accept=".csv,text/csv">
+          <p id="dataStatus" class="status-text">Waiting for model scores.</p>
+        </div>
+        <div>
+          <label for="historyUpload">Load price files</label>
+          <input id="historyUpload" type="file" accept=".csv,text/csv" multiple>
+          <p id="priceStatus" class="status-text">Waiting for price scenarios.</p>
+        </div>
+        <div>
+          <label for="bucketFilter">Risk bucket</label>
+          <select id="bucketFilter">
+            <option value="All">All</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        <div>
+          <label for="tickerSearch">Ticker</label>
+          <input id="tickerSearch" type="search" placeholder="Search ticker">
+        </div>
+      </section>
+
+      <!-- ── Summary KPIs ─────────────────────────────────────────────── -->
+      <section class="metrics-grid" aria-label="Risk summary">
+        <article class="metric-tile">
+          <span>Total names</span>
+          <strong id="metricTotal">0</strong>
+        </article>
+        <article class="metric-tile">
+          <span>High risk</span>
+          <strong id="metricHigh">0</strong>
+        </article>
+        <article class="metric-tile">
+          <span>Average probability</span>
+          <strong id="metricAverage">0%</strong>
+        </article>
+        <article class="metric-tile">
+          <span>As of</span>
+          <strong id="metricDate">-</strong>
+        </article>
+      </section>
+
+      <!-- ── Top names + data contract ────────────────────────────────── -->
+      <section class="dashboard-grid">
+        <div class="risk-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Highest probabilities</p>
+              <h2>Top names</h2>
+            </div>
+          </div>
+          <div id="riskBars" class="risk-bars" aria-live="polite"></div>
+        </div>
+
+        <div class="risk-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Required backend inputs</p>
+              <h2>Data contract</h2>
+            </div>
+          </div>
+          <ul class="input-list">
+            <li><strong>prices</strong><span>ticker, date, adj_close, volume</span></li>
+            <li><strong>benchmark_prices</strong><span>date, benchmark_close</span></li>
+            <li><strong>fundamentals</strong><span>ticker, period_end, market_cap, shares_outstanding, market_to_book, leverage, roa</span></li>
+            <li><strong>controversies</strong><span>ticker, date, sector, controversy_score</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ── Price scenario chart ──────────────────────────────────────── -->
+      <section class="chart-section" aria-label="Price scenario chart">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">13-week scenario range</p>
+            <h2 id="chartTitle">Select a ticker</h2>
+          </div>
+          <p id="chartStatus" class="status-text">Price history and scenarios load after the backend demo run.</p>
+        </div>
+        <div class="chart-layout">
+          <div id="priceChart" class="price-chart" aria-live="polite"></div>
+          <div class="scenario-summary">
+            <div>
+              <span>Latest price</span>
+              <strong id="latestPrice">-</strong>
+            </div>
+            <div>
+              <span>Downside p05</span>
+              <strong id="priceP05">-</strong>
+            </div>
+            <div>
+              <span>Base p50</span>
+              <strong id="priceP50">-</strong>
+            </div>
+            <div>
+              <span>Upside p95</span>
+              <strong id="priceP95">-</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Feature importance ────────────────────────────────────────── -->
+      <section class="risk-panel importance-section" aria-label="Feature importance">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Model explainability</p>
+            <h2>Feature importance</h2>
+          </div>
+          <p id="importanceStatus" class="status-text">Run the backend to load feature importance.</p>
+        </div>
+        <p class="section-description">
+          Relative contribution of each predictor to crash-risk classification.
+          For logistic regression this is the absolute coefficient magnitude; for
+          tree-based models it is the mean impurity decrease.
+        </p>
+        <div id="importanceBars" class="importance-bars" aria-live="polite"></div>
+      </section>
+
+      <!-- ── Algorithm comparison ──────────────────────────────────────── -->
+      <section class="comparison-section" aria-label="Algorithm comparison">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Hyperparameter tuning &amp; model selection</p>
+            <h2>Algorithm comparison</h2>
+          </div>
+          <p id="algoStatus" class="status-text">Waiting for algorithm comparison report.</p>
+        </div>
+        <p class="section-description">
+          Logistic Regression, Random Forest, and Gradient Boosting trained on identical
+          chronological splits (60 % train / 20 % validation / 20 % test). Hyperparameter
+          search uses 5-fold <code>TimeSeriesSplit</code> GridSearchCV, scored by ROC-AUC.
+        </p>
+        <div class="table-shell">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Algorithm</th>
+                <th>Split</th>
+                <th>CV ROC-AUC</th>
+                <th>Test ROC-AUC</th>
+                <th>Precision@Top Bucket</th>
+                <th>Crash Capture</th>
+              </tr>
+            </thead>
+            <tbody id="algoRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── ESG lift comparison ───────────────────────────────────────── -->
+      <section class="comparison-section" aria-label="ESG model comparison">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Research validation</p>
+            <h2>Does ESG controversy add signal?</h2>
+          </div>
+          <p id="comparisonStatus" class="status-text">Waiting for ESG model comparison.</p>
+        </div>
+        <div class="comparison-explainer">
+          <p>
+            Nested feature comparison: the baseline uses only price/fundamental/downside
+            risk features; the full model adds eight ESG controversy variables (score level,
+            4/13/26-week changes, rolling mean &amp; std, spike flag, sector percentile).
+          </p>
+          <p>
+            Econometric read: the lift rows report the out-of-sample improvement from adding
+            ESG controversy data on the same chronological train/validation/test splits.
+          </p>
+        </div>
+        <div id="comparisonSummary" class="lift-summary-grid"></div>
+        <div class="metric-guide">
+          <span><strong>ROC-AUC</strong> ranks risky names above safer names.</span>
+          <span><strong>Precision@Top Bucket</strong> asks how many flagged high-risk names actually become high-risk.</span>
+          <span><strong>Crash Capture</strong> asks how many future high-risk names were caught in the top bucket.</span>
+        </div>
+        <div class="table-shell">
+          <table class="comparison-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Split</th>
+                <th>ROC-AUC</th>
+                <th>Precision@Top Bucket</th>
+                <th>Crash Capture</th>
+                <th>Plain-English read</th>
+              </tr>
+            </thead>
+            <tbody id="comparisonRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── Business analysis ─────────────────────────────────────────── -->
+      <section class="comparison-section" aria-label="Business analysis">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Section 4 &mdash; Economic value</p>
+            <h2>Business analysis</h2>
+          </div>
+          <p id="bizStatus" class="status-text">Waiting for business analysis.</p>
+        </div>
+        <p class="section-description">
+          Hypothetical long-only strategy: each week, equal-weight all stocks <em>not</em>
+          flagged as High crash-risk. Benchmarked against equal-weighting the full universe.
+          AUM assumption: <strong>$1 billion</strong>. Implementation team: 4 people at $200k each.
+        </p>
+        <div id="bizSummary" class="biz-summary-grid"></div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr><th>Metric</th><th>Value</th></tr>
+            </thead>
+            <tbody id="bizRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── Stock scores table ────────────────────────────────────────── -->
+      <section class="table-section" aria-label="Stock scores">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Scored universe</p>
+            <h2>Stock risk table</h2>
+          </div>
+          <p id="resultCount" class="status-text">0 rows</p>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>As of</th>
+                <th>Probability</th>
+                <th>Bucket</th>
+                <th>Top drivers</th>
+              </tr>
+            </thead>
+            <tbody id="scoreRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

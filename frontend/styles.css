@@ -1,0 +1,401 @@
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+:root {
+  --ink:          #1a2025;
+  --muted:        #5c6770;
+  --line:         #dce1e4;
+  --page:         #f5f7f6;
+  --surface:      #ffffff;
+  --high:         #c0332e;
+  --medium:       #b07d00;
+  --low:          #1a7f68;
+  --accent:       #0d6b62;
+  --accent-soft:  #e0f0ed;
+  --warning-soft: #fef3c0;
+  --danger-soft:  #fde4e1;
+  --positive:     #1a7f68;
+  --negative:     #c0332e;
+  --radius:       10px;
+  --shadow:       0 1px 4px rgba(0,0,0,.07);
+}
+
+/* ── Reset & base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--page);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.875em;
+  background: #eef1f0;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ── Layout wrapper ────────────────────────────────────────────────────── */
+.app-header, main {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 32px;
+  align-items: center;
+  padding: 32px 0 20px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+h1 { margin: 0; font-size: 2.25rem; line-height: 1.06; letter-spacing: -.02em; }
+h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+
+.lede {
+  max-width: 700px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: .95rem;
+  line-height: 1.65;
+}
+
+.header-image {
+  width: 100%;
+  height: 168px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+/* ── Section spacing ───────────────────────────────────────────────────── */
+.toolbar, .metrics-grid, .dashboard-grid,
+.chart-section, .comparison-section, .importance-section,
+.table-section { margin-top: 20px; }
+
+/* ── Toolbar ───────────────────────────────────────────────────────────── */
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(200px,1fr) minmax(200px,1fr) minmax(140px,180px) minmax(160px,220px);
+  gap: 16px;
+  align-items: end;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+label { display: block; margin-bottom: 6px; font-size: .84rem; font-weight: 700; }
+
+input, select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #b4bdc2;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  transition: border-color .15s;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.status-text { margin: 7px 0 0; color: var(--muted); font-size: .85rem; line-height: 1.4; }
+
+/* ── Metric tiles ──────────────────────────────────────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 14px;
+}
+
+.metric-tile {
+  min-height: 92px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.metric-tile span { display: block; color: var(--muted); font-size: .84rem; }
+.metric-tile strong { display: block; margin-top: 12px; font-size: 1.8rem; line-height: 1; letter-spacing: -.02em; }
+
+/* ── Dashboard grid ────────────────────────────────────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1.4fr) minmax(280px,.9fr);
+  gap: 18px;
+}
+
+/* ── Panels ────────────────────────────────────────────────────────────── */
+.risk-panel, .chart-section, .comparison-section,
+.importance-section, .table-section {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.section-description {
+  margin: 0 0 16px;
+  color: #3d4a52;
+  font-size: .9rem;
+  line-height: 1.6;
+  max-width: 900px;
+}
+
+/* ── Price chart ───────────────────────────────────────────────────────── */
+.chart-layout {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 210px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.price-chart {
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  overflow: hidden;
+}
+.price-chart svg { display: block; width: 100%; height: 320px; }
+
+.chart-axis  { stroke: #a8b4b9; stroke-width: 1; }
+.chart-grid  { stroke: #e3e8ea; stroke-width: 1; }
+.history-line   { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+.projection-line { fill: none; stroke: var(--medium); stroke-dasharray: 6 4; stroke-width: 2; }
+.scenario-band  { fill: rgba(176,125,0,.13); stroke: var(--medium); stroke-width: 1; }
+.chart-label    { fill: var(--muted); font-size: 11.5px; }
+
+.scenario-summary { display: grid; gap: 10px; }
+.scenario-summary div { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.scenario-summary span { display: block; color: var(--muted); font-size: .82rem; }
+.scenario-summary strong { display: block; margin-top: 8px; font-size: 1.2rem; }
+
+/* ── Feature importance bars ───────────────────────────────────────────── */
+.importance-bars { display: grid; gap: 8px; }
+
+.imp-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0,1fr) 62px;
+  gap: 10px;
+  align-items: center;
+}
+
+.imp-label { font-size: .84rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-track { height: 16px; background: #eef1f0; border-radius: 6px; overflow: hidden; }
+.imp-fill  { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), #24a090); min-width: 2px; }
+.imp-value { font-size: .82rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Algorithm comparison table ────────────────────────────────────────── */
+.comparison-table { min-width: 820px; }
+
+.comparison-explainer {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.comparison-explainer p, .metric-guide span {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fafa;
+  color: #3a4248;
+  line-height: 1.55;
+  font-size: .9rem;
+}
+
+/* ── ESG lift summary cards ─────────────────────────────────────────────── */
+.lift-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lift-card {
+  display: grid;
+  gap: 6px;
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.lift-card span { color: var(--muted); font-size: .83rem; }
+.lift-card strong { font-size: 1.45rem; }
+.lift-card.positive strong, .metric-value.positive { color: var(--positive); }
+.lift-card.negative strong, .metric-value.negative { color: var(--negative); }
+
+.metric-guide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* ── Business analysis ──────────────────────────────────────────────────── */
+.biz-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.biz-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  gap: 6px;
+}
+.biz-card span { color: var(--muted); font-size: .83rem; }
+.biz-card strong { font-size: 1.3rem; }
+.biz-card.positive strong { color: var(--positive); }
+.biz-card.negative strong { color: var(--negative); }
+.biz-card.neutral  strong { color: var(--accent); }
+
+/* ── Model label cells ──────────────────────────────────────────────────── */
+.model-label { display: grid; gap: 3px; }
+.model-label strong { font-size: .93rem; }
+.model-label span { color: var(--muted); font-size: .8rem; }
+
+.split-pill {
+  display: inline-block;
+  min-width: 80px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f5f7f6;
+  text-align: center;
+  text-transform: capitalize;
+  font-size: .84rem;
+}
+
+.metric-value { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.plain-read { max-width: 280px; color: #3a4248; line-height: 1.45; font-size: .88rem; }
+
+/* ── Risk bars ──────────────────────────────────────────────────────────── */
+.risk-bars { display: grid; gap: 11px; }
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0,1fr) 68px;
+  gap: 10px;
+  align-items: center;
+}
+.bar-label  { font-weight: 700; font-size: .92rem; overflow-wrap: anywhere; }
+.bar-track  { height: 17px; background: #eaedec; border-radius: 6px; overflow: hidden; }
+.bar-fill   { height: 100%; min-width: 3px; border-radius: 6px; }
+.bar-fill.high   { background: var(--high); }
+.bar-fill.medium { background: var(--medium); }
+.bar-fill.low    { background: var(--low); }
+.bar-value  { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: .9rem; }
+
+/* ── Input list (data contract) ─────────────────────────────────────────── */
+.input-list { display: grid; gap: 11px; padding: 0; margin: 0; list-style: none; }
+.input-list li { display: grid; gap: 3px; padding-bottom: 11px; border-bottom: 1px solid var(--line); }
+.input-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.input-list span { color: var(--muted); font-size: .84rem; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* ── Table shell ────────────────────────────────────────────────────────── */
+.table-shell { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; min-width: 680px; }
+th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+td { font-size: .9rem; line-height: 1.45; }
+
+.table-section tbody tr { cursor: pointer; }
+.table-section tbody tr:hover { background: #f2f6f5; }
+.table-section tbody tr.selected-row { background: var(--accent-soft); }
+
+.ticker-cell    { font-weight: 700; }
+.probability-cell { font-variant-numeric: tabular-nums; }
+
+/* ── Risk bucket badges ─────────────────────────────────────────────────── */
+.bucket {
+  display: inline-block;
+  min-width: 68px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: .84rem;
+  font-weight: 700;
+  text-align: center;
+}
+.bucket.high   { color: var(--high);   background: var(--danger-soft); }
+.bucket.medium { color: #7a5f00;       background: var(--warning-soft); }
+.bucket.low    { color: var(--low);    background: var(--accent-soft); }
+
+/* ── Driver pills ───────────────────────────────────────────────────────── */
+.driver-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.driver-pill {
+  display: inline-block;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f9fafa;
+  color: #424c52;
+  font-size: .8rem;
+}
+
+/* ── Algo table specific ────────────────────────────────────────────────── */
+.algo-model { font-weight: 700; font-size: .9rem; }
+.best-row td { background: #f0f8f7; }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.empty-state { padding: 24px; color: var(--muted); text-align: center; font-size: .9rem; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .app-header,
+  .toolbar,
+  .metrics-grid,
+  .dashboard-grid,
+  .comparison-explainer,
+  .lift-summary-grid,
+  .biz-summary-grid,
+  .metric-guide,
+  .chart-layout { grid-template-columns: 1fr; }
+
+  h1 { font-size: 1.9rem; }
+  .header-image { height: 140px; }
+  .imp-row { grid-template-columns: 160px minmax(0,1fr) 54px; }
+}
+
+@media (max-width: 520px) {
+  .app-header, main { width: min(100% - 18px, 1200px); }
+  .toolbar, .risk-panel, .chart-section, .comparison-section,
+  .importance-section, .table-section, .metric-tile { padding: 12px; }
+  .bar-row { grid-template-columns: 56px minmax(0,1fr) 54px; gap: 8px; }
+}

@@ -1,0 +1,8 @@
+.pytest-tmp/
+.claude/
+pytest-cache-files-*/
+data/processed/
+outputs/
+data/raw/
+Research Paper/*.pdf
+**/__pycache__/
