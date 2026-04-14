@@ -67,21 +67,19 @@ The ESG model comparison report is the key research artifact for testing whether
 
 ## Netlify Demo Deployment
 
-This repo is prepared for a static Netlify demo with `netlify.toml`.
+This repo is prepared for a static Netlify frontend with `netlify.toml`.
 
 Netlify will:
 
-- install the Python package during the build
-- run `python -m crashrisk.demo`
-- write demo dashboard CSV files into `frontend/outputs/`
 - publish the `frontend/` folder
+- use the dashboard's built-in demo fallback data until you connect the Render API
 
 Deploy settings:
 
-- Build command: handled by `netlify.toml`
+- Build command: `echo 'Static frontend deploy'`
 - Publish directory: `frontend`
 
-Recommended deploy path: connect the GitHub repo to Netlify so the build command runs automatically.
+Recommended deploy path: connect the GitHub repo to Netlify. Netlify only needs to host the static dashboard.
 
 If you use Netlify drag-and-drop instead, run this first and then upload the `frontend/` folder:
 
@@ -89,11 +87,11 @@ If you use Netlify drag-and-drop instead, run this first and then upload the `fr
 C:\Users\itsab\anaconda3\python.exe -m crashrisk.demo --processed-dir data/processed --outputs-dir frontend/outputs
 ```
 
-This is enough for a polished demo site. It does not create a live Python prediction API.
+This static frontend does not create a live Python prediction API. Use Render for the live raw-file scoring backend.
 
 ## Do We Need Render?
 
-For the current demo, no. Netlify can host the dashboard and pre-generated demo outputs.
+For the static dashboard, no. Netlify can host the dashboard. For live raw-file scoring, yes.
 
 For a real product where a user uploads raw Bloomberg-style files and receives a fresh model score on demand, yes, use a Python backend host such as Render, Railway, Fly.io, AWS, or similar. Netlify would host the frontend, and the frontend would call that backend API.
 
