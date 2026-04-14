@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from crashrisk.analysis.business import business_analysis_to_dataframe, compute_business_analysis
+from crashrisk.analysis.reporting import build_report_artifacts
 from crashrisk.config import CrashRiskConfig, RawDataPaths, discover_raw_paths
 from crashrisk.features.pipeline import build_feature_panel
 from crashrisk.models.compare import compare_algorithms, compare_esg_lift
@@ -36,7 +37,8 @@ def run_mvp(
     7. Score the latest available week.
     8. Build price history and scenario outputs.
     9. Compute portfolio-level business analysis.
-    10. Write all outputs to disk.
+    10. Build report-ready data summary, SQL, text-analysis, and figure artifacts.
+    11. Write all outputs to disk.
 
     Parameters
     ----------
@@ -97,6 +99,19 @@ def run_mvp(
         ]
     )
 
+    report_artifacts = build_report_artifacts(
+        raw_paths=paths,
+        feature_panel=feature_panel,
+        dataset=dataset,
+        scores=scores,
+        price_history=price_history,
+        price_scenarios=price_scenarios,
+        feature_importance=feature_importance_df,
+        model_comparison=model_comparison,
+        outputs_dir=outputs_dir,
+        config=config,
+    )
+
     # ── Write outputs ──────────────────────────────────────────────────────
     feature_panel.to_parquet(processed_dir / "feature_panel.parquet", index=False)
     dataset.to_parquet(processed_dir / "model_dataset.parquet", index=False)
@@ -107,6 +122,10 @@ def run_mvp(
     algorithm_comparison.to_csv(outputs_dir / "algorithm_comparison.csv", index=False)
     feature_importance_df.to_csv(outputs_dir / "feature_importance.csv", index=False)
     business_analysis_df.to_csv(outputs_dir / "business_analysis.csv", index=False)
+    report_artifacts["data_summary"].to_csv(outputs_dir / "data_summary.csv", index=False)
+    report_artifacts["cleaning_log"].to_csv(outputs_dir / "cleaning_log.csv", index=False)
+    report_artifacts["sql_summary"].to_csv(outputs_dir / "sql_summary.csv", index=False)
+    report_artifacts["textual_analysis"].to_csv(outputs_dir / "textual_analysis.csv", index=False)
 
     return {
         "feature_panel": feature_panel,
@@ -120,4 +139,5 @@ def run_mvp(
         "feature_importance": feature_importance_df,
         "business_analysis": business_analysis,
         "business_analysis_df": business_analysis_df,
+        **report_artifacts,
     }

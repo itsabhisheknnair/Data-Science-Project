@@ -194,6 +194,10 @@ def compute_business_analysis(
         "team_annual_cost": team_annual_cost,
         "team_roi": _fmt(team_roi, 2),
         "justifies_team": bool(np.isfinite(economic_gain) and economic_gain > team_annual_cost),
+        "business_analysis_note": (
+            "Illustrative gross overlay result annualized from the evaluation window; "
+            "excludes transaction costs, capacity limits, and live implementation slippage."
+        ),
     }
 
 

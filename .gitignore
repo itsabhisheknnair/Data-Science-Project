@@ -9,6 +9,7 @@ pytest-cache-files-*/
 .venv/
 venv/
 data/raw/*
+data/raw_yfinance/*
 data/processed/*
 outputs/*
 frontend/outputs/*

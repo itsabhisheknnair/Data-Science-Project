@@ -26,6 +26,26 @@ def test_load_prices_csv_standardizes_tickers_and_dates(workspace_tmp_path):
     assert prices.loc[0, "adj_close"] == 100
 
 
+def test_load_prices_infers_day_first_export_dates(workspace_tmp_path):
+    path = workspace_tmp_path / "prices.csv"
+    pd.DataFrame(
+        {
+            "ticker": ["AAA", "AAA", "AAA"],
+            "date": ["02-01-2020", "13-01-2020", "24-01-2020"],
+            "adj_close": [100, 101, 102],
+            "volume": [10_000, 10_100, 10_200],
+        }
+    ).to_csv(path, index=False)
+
+    prices = load_prices(path)
+
+    assert prices["date"].tolist() == [
+        pd.Timestamp("2020-01-02"),
+        pd.Timestamp("2020-01-13"),
+        pd.Timestamp("2020-01-24"),
+    ]
+
+
 def test_load_controversies_supports_excel(workspace_tmp_path):
     path = workspace_tmp_path / "controversies.xlsx"
     pd.DataFrame(

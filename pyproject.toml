@@ -16,6 +16,7 @@ dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "python-multipart",
+  "yfinance",
 ]
 
 [tool.pytest.ini_options]

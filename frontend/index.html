@@ -41,6 +41,26 @@
         <p class="section-description">
           Upload the four raw Bloomberg-style exports, then run the hosted model. The API URL is fixed behind the scenes.
         </p>
+        <div id="liveScoreProgress" class="live-progress" hidden>
+          <div class="live-progress-header">
+            <span id="liveProgressLabel">Preparing files</span>
+            <strong id="liveProgressValue">0%</strong>
+          </div>
+          <div
+            id="liveProgressTrack"
+            class="live-progress-track"
+            role="progressbar"
+            aria-label="Live scoring progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <span id="liveProgressBar"></span>
+          </div>
+          <p id="liveProgressHint" class="live-progress-hint">
+            The hosted Python model is processing your uploaded files.
+          </p>
+        </div>
         <form id="apiUploadForm" class="api-form">
           <label class="file-card upload-card" for="rawPrices">
             <span>Raw input</span>
@@ -300,9 +320,8 @@
           <p id="importanceStatus" class="status-text">Demo feature importance is showing until you run a live upload.</p>
         </div>
         <p class="section-description">
-          Relative contribution of each predictor to crash-risk classification.
-          For logistic regression this is the absolute coefficient magnitude; for
-          tree-based models it is the mean impurity decrease.
+          Share of total model importance across the displayed predictors. The
+          bars are normalized to add up to 100%, so they are easier to compare.
         </p>
         <div id="importanceBars" class="importance-bars" aria-live="polite"></div>
       </section>
@@ -404,6 +423,61 @@
             <tbody id="bizRows"></tbody>
           </table>
         </div>
+      </section>
+
+      <!-- ── FDS Project Evidence ─────────────────────────────────────── -->
+      <section class="comparison-section" aria-label="FDS project evidence" data-info-key="fds-evidence">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">FIN42110 rubric mapping</p>
+            <h2>FDS Project Evidence</h2>
+          </div>
+          <p id="evidenceStatus" class="status-text">Run the backend to populate rubric evidence.</p>
+        </div>
+        <p class="section-description">
+          Maps the dashboard to the FIN42110 marking rubric: data summary, cleaning log,
+          SQL evidence, textual analysis, and report figure downloads.
+        </p>
+
+        <div id="evidenceHeadline" class="evidence-headline-grid"></div>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>Data Summary</strong>
+            <span class="evidence-badge" id="dataSummaryBadge"></span>
+          </summary>
+          <div id="dataSummaryContent" class="evidence-card-body"></div>
+        </details>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>Cleaning Log</strong>
+            <span class="evidence-badge" id="cleaningLogBadge"></span>
+          </summary>
+          <div id="cleaningLogContent" class="evidence-card-body"></div>
+        </details>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>SQL Evidence</strong>
+            <span class="evidence-badge" id="sqlEvidenceBadge"></span>
+          </summary>
+          <div id="sqlEvidenceContent" class="evidence-card-body"></div>
+        </details>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>Textual Analysis</strong>
+            <span class="evidence-badge" id="textualAnalysisBadge"></span>
+          </summary>
+          <div id="textualAnalysisContent" class="evidence-card-body"></div>
+        </details>
+
+        <p class="evidence-subsection-label">Report Figures</p>
+        <div id="reportFigures" class="report-figures-grid"></div>
+
+        <p class="evidence-subsection-label">Download Report Artifacts</p>
+        <div id="reportDownloads" class="report-downloads-grid"></div>
       </section>
 
     </main>

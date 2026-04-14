@@ -43,6 +43,12 @@ def main() -> None:
     print(f"Wrote algorithm comparison   : {outputs / 'algorithm_comparison.csv'}")
     print(f"Wrote feature importance     : {outputs / 'feature_importance.csv'}")
     print(f"Wrote business analysis      : {outputs / 'business_analysis.csv'}")
+    print(f"Wrote data summary           : {outputs / 'data_summary.csv'}")
+    print(f"Wrote cleaning log           : {outputs / 'cleaning_log.csv'}")
+    print(f"Wrote SQL summary            : {outputs / 'sql_summary.md'}")
+    print(f"Wrote textual analysis       : {outputs / 'textual_analysis.csv'}")
+    print(f"Wrote report figures         : {outputs / 'figures'}")
+    print(f"Wrote report outline         : {outputs / 'fds_report_outline.md'}")
 
     # ── Quick summary ──────────────────────────────────────────────────────
     print("\n--- Algorithm comparison (test split) ---")

@@ -113,6 +113,10 @@ def schema() -> dict[str, Any]:
             ],
             "controversies": ["ticker", "date", "sector", "controversy_score"],
         },
+        "optional_inputs": {
+            "news_text": ["ticker", "date", "headline/title/description/body/text/summary", "source optional"],
+            "controversy_text": ["ticker", "date", "headline/title/description/body/text/summary", "source optional"],
+        },
         "accepted_extensions": sorted(ALLOWED_EXTENSIONS),
         "response_tables": [
             "scores",
@@ -122,6 +126,10 @@ def schema() -> dict[str, Any]:
             "algorithm_comparison",
             "feature_importance",
             "business_analysis",
+            "data_summary",
+            "cleaning_log",
+            "sql_summary",
+            "textual_analysis",
         ],
     }
 
@@ -132,6 +140,8 @@ def predict(
     benchmark_prices: UploadFile = File(...),
     fundamentals: UploadFile = File(...),
     controversies: UploadFile = File(...),
+    news_text: UploadFile | None = File(None),
+    controversy_text: UploadFile | None = File(None),
     tune: bool = Form(False),
 ) -> dict[str, Any]:
     uploads = {
@@ -146,6 +156,9 @@ def predict(
             name: _write_upload(upload, tmp_dir / name)
             for name, upload in uploads.items()
         }
+        for name, upload in {"news_text": news_text, "controversy_text": controversy_text}.items():
+            if upload is not None and upload.filename:
+                _write_upload(upload, tmp_dir / name)
 
         try:
             result = run_mvp(
@@ -172,4 +185,8 @@ def predict(
         "algorithm_comparison": _records(result["algorithm_comparison"]),
         "feature_importance": _records(result["feature_importance"]),
         "business_analysis": _records(result["business_analysis_df"]),
+        "data_summary": _records(result["data_summary"]),
+        "cleaning_log": _records(result["cleaning_log"]),
+        "sql_summary": _records(result["sql_summary"]),
+        "textual_analysis": _records(result["textual_analysis"]),
     }

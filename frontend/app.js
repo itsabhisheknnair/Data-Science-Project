@@ -77,6 +77,29 @@ const DEMO_PRICE_SCENARIOS = [
   { ticker: "ALPH", as_of_date: "2024-09-13", latest_price: 103, horizon_weeks: 13, price_p05: 87, price_p50: 103, price_p95: 122, crash_probability: 0.30, risk_bucket: "Low", scenario_method: "demo" },
 ];
 
+const DEMO_DATA_SUMMARY = [
+  { section: "feature_panel",  metric: "rows",                   value: "—", detail: "Run the backend to see weekly feature rows." },
+  { section: "feature_panel",  metric: "ticker_count",           value: "—", detail: "Run the backend to see ticker count." },
+  { section: "model_dataset",  metric: "rows",                   value: "—", detail: "Run the backend to see labeled model rows." },
+  { section: "configuration",  metric: "fundamentals_lag_days",  value: "45", detail: "Fundamentals become usable 45 calendar days after period_end." },
+  { section: "configuration",  metric: "target_horizon_weeks",   value: "13", detail: "Crash-risk target uses a 13-week future window." },
+];
+
+const DEMO_CLEANING_LOG = [
+  { dataset: "feature_engineering", check: "date_alignment_method", value: "weekly Friday observations", detail: "Daily raw inputs are aligned to Friday week-end observations before modeling." },
+  { dataset: "target_creation",     check: "future_window",          value: "t+1 through t+13",           detail: "Targets use future weeks only; features at t use data available at or before t." },
+];
+
+const DEMO_SQL_SUMMARY = [
+  { query_name: "demo_placeholder", query: "-- Run the backend locally to generate SQL evidence.", result_json: "[]", row_count: 0 },
+];
+
+const DEMO_TEXTUAL_ANALYSIS = [
+  { status: "no_text_file", note: "Rubric evidence appears after a backend run. Supply controversy_text.csv or news_text.csv to enable direct headline analysis." },
+];
+
+const DEMO_TICKERS = new Set(DEMO_ROWS.map(row => row.ticker));
+
 /* ── App state ─────────────────────────────────────────────────────────── */
 let allRows        = [];
 let priceHistory   = [];
@@ -84,8 +107,14 @@ let priceScenarios = [];
 let comparisonRows = [];
 let algoRows       = [];
 let importanceRows = [];
-let bizRows        = [];
-let selectedTicker = "";
+let bizRows             = [];
+let dataSummaryRows     = [];
+let cleaningLogRows     = [];
+let sqlSummaryRows      = [];
+let textualAnalysisRows = [];
+let selectedTicker      = "";
+let liveProgressTimer   = null;
+let liveProgressPercent = 0;
 
 /* ── DOM refs ──────────────────────────────────────────────────────────── */
 const uploadInput       = document.querySelector("#scoreUpload");
@@ -109,6 +138,12 @@ const rawControversiesStatus = document.querySelector("#rawControversiesStatus")
 const apiTune           = document.querySelector("#apiTune");
 const apiStatus         = document.querySelector("#apiStatus");
 const runLiveScoreButton = document.querySelector("#runLiveScoreButton");
+const liveScoreProgress = document.querySelector("#liveScoreProgress");
+const liveProgressLabel = document.querySelector("#liveProgressLabel");
+const liveProgressValue = document.querySelector("#liveProgressValue");
+const liveProgressTrack = document.querySelector("#liveProgressTrack");
+const liveProgressBar   = document.querySelector("#liveProgressBar");
+const liveProgressHint  = document.querySelector("#liveProgressHint");
 const bucketFilter      = document.querySelector("#bucketFilter");
 const tickerSearch      = document.querySelector("#tickerSearch");
 const dataStatus        = document.querySelector("#dataStatus");
@@ -133,11 +168,23 @@ const metricTotal       = document.querySelector("#metricTotal");
 const metricHigh        = document.querySelector("#metricHigh");
 const metricAverage     = document.querySelector("#metricAverage");
 const metricDate        = document.querySelector("#metricDate");
-const latestPrice       = document.querySelector("#latestPrice");
-const priceP05          = document.querySelector("#priceP05");
-const priceP50          = document.querySelector("#priceP50");
-const priceP95          = document.querySelector("#priceP95");
-const API_BASE_URL      = "https://crashrisk-api.onrender.com";
+const latestPrice            = document.querySelector("#latestPrice");
+const priceP05               = document.querySelector("#priceP05");
+const priceP50               = document.querySelector("#priceP50");
+const priceP95               = document.querySelector("#priceP95");
+const evidenceStatus         = document.querySelector("#evidenceStatus");
+const evidenceHeadline       = document.querySelector("#evidenceHeadline");
+const dataSummaryContent     = document.querySelector("#dataSummaryContent");
+const cleaningLogContent     = document.querySelector("#cleaningLogContent");
+const sqlEvidenceContent     = document.querySelector("#sqlEvidenceContent");
+const textualAnalysisContent = document.querySelector("#textualAnalysisContent");
+const dataSummaryBadge       = document.querySelector("#dataSummaryBadge");
+const cleaningLogBadge       = document.querySelector("#cleaningLogBadge");
+const sqlEvidenceBadge       = document.querySelector("#sqlEvidenceBadge");
+const textualAnalysisBadge   = document.querySelector("#textualAnalysisBadge");
+const reportFigures          = document.querySelector("#reportFigures");
+const reportDownloads        = document.querySelector("#reportDownloads");
+const API_BASE_URL           = "https://crashrisk-api.onrender.com";
 
 const SECTION_INFO = {
   "live-scoring": {
@@ -230,10 +277,11 @@ const SECTION_INFO = {
   },
   "feature-importance": {
     title: "Feature importance",
-    lead: "This explains which inputs matter most in the fitted model overall.",
+    lead: "This explains which inputs matter most in the fitted model overall. The displayed values are normalized percentage shares that add to 100%.",
     points: [
-      "For logistic regression, importance is based on standardized coefficient magnitude.",
-      "Large values mean the feature has a stronger association with the model's crash-risk classification.",
+      "For logistic regression, the raw signal starts from standardized coefficient magnitude.",
+      "The frontend converts raw importance values into percentage shares so the chart is easier to read.",
+      "Large percentages mean the feature has a stronger association with the model's crash-risk classification.",
       "This helps explain whether ESG controversy features, turnover, downside beta, volatility, and fundamentals are driving the signal.",
       "Feature importance is not causal proof; it is model interpretation."
     ],
@@ -271,6 +319,19 @@ const SECTION_INFO = {
       "The AUM and team-cost assumptions turn model performance into a rough business case."
     ],
     note: "Treat this as a product-demo overlay until tested on real Bloomberg history."
+  },
+  "fds-evidence": {
+    title: "FDS Project Evidence",
+    lead: "This section maps the dashboard to the FIN42110 marking rubric. It provides documented proof for the data, SQL, textual analysis, and ML components of the submission.",
+    points: [
+      "Data Summary documents sample coverage: ticker count, weekly observation count, model-ready rows, date range, and configuration settings such as the 45-day fundamentals lag and the 13-week target horizon.",
+      "Cleaning Log records missing values, duplicate rows, invalid price checks, rows removed, the fundamentals availability lag, weekly Friday date alignment, and the target window definition.",
+      "SQL Evidence shows five runnable queries with compact result tables: ticker observation counts, sector controversy averages, top controversy events, target class balance, and high-risk names by sector.",
+      "Textual Analysis shows sentiment score, negative/positive keyword counts, and controversy keyword counts per ticker-week if a news_text or controversy_text file is supplied. Otherwise it explains the limitation clearly.",
+      "Report Figures shows SVG charts produced by a local backend run and can be copied into the written report.",
+      "Download Report Artifacts provides links to the report outline, SQL summary, project report draft, and viva slides outline generated by the backend."
+    ],
+    note: "This section supports the report and viva — it does not change the crash-risk model signal."
   }
 };
 
@@ -569,17 +630,32 @@ function renderImportance() {
     return;
   }
   const sorted = [...importanceRows].sort((a, b) => b.importance - a.importance).slice(0, 15);
-  const maxImp = sorted[0].importance || 1;
-  importanceBars.innerHTML = sorted.map(r => {
-    const pct = Math.max(2, Math.round((r.importance / maxImp) * 100));
+  const totalImportance = sorted.reduce((sum, row) => sum + Math.max(0, row.importance), 0) || 1;
+  const rawShares = sorted.map(r => (Math.max(0, r.importance) / totalImportance) * 100);
+  const flooredShares = rawShares.map(Math.floor);
+  let remainder = 100 - flooredShares.reduce((sum, value) => sum + value, 0);
+  rawShares
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach(({ index }) => {
+      if (remainder > 0) {
+        flooredShares[index] += 1;
+        remainder -= 1;
+      }
+    });
+
+  importanceBars.innerHTML = sorted.map((r, index) => {
+    const share = Math.max(0, r.importance) / totalImportance;
+    const pct = Math.max(2, share * 100);
     const label = r.feature.replaceAll("_", " ");
+    const displayValue = `${flooredShares[index]}%`;
     return `
       <div class="imp-row">
         <div class="imp-label" title="${escapeHtml(r.feature)}">${escapeHtml(label)}</div>
         <div class="imp-track">
           <div class="imp-fill" style="width:${pct}%"></div>
         </div>
-        <div class="imp-value">${r.importance.toFixed(3)}</div>
+        <div class="imp-value">${displayValue}</div>
       </div>`;
   }).join("");
 }
@@ -747,6 +823,239 @@ function renderBizAnalysis() {
   }).join("");
 }
 
+/* ── FDS Evidence ──────────────────────────────────────────────────────── */
+const REPORT_FIGURES = [
+  { name: "Risk probability ranking",  paths: ["outputs/figures/risk_probability_ranking.svg",  "../outputs/figures/risk_probability_ranking.svg"] },
+  { name: "Sector controversy",        paths: ["outputs/figures/sector_controversy.svg",          "../outputs/figures/sector_controversy.svg"] },
+  { name: "Controversy over time",     paths: ["outputs/figures/controversy_over_time.svg",       "../outputs/figures/controversy_over_time.svg"] },
+  { name: "Feature importance",        paths: ["outputs/figures/feature_importance.svg",          "../outputs/figures/feature_importance.svg"] },
+  { name: "ESG lift",                  paths: ["outputs/figures/esg_lift.svg",                    "../outputs/figures/esg_lift.svg"] },
+  { name: "Price scenario range",      paths: ["outputs/figures/price_scenario_range.svg",        "../outputs/figures/price_scenario_range.svg"] },
+  { name: "Text word cloud",           paths: ["outputs/figures/text_word_cloud.svg",             "../outputs/figures/text_word_cloud.svg"] },
+];
+
+const REPORT_ARTIFACTS = [
+  { name: "FDS report outline",   paths: ["outputs/fds_report_outline.md",        "../outputs/fds_report_outline.md"],        filename: "fds_report_outline.md" },
+  { name: "SQL summary",          paths: ["outputs/sql_summary.md",               "../outputs/sql_summary.md"],               filename: "sql_summary.md" },
+  { name: "Project report draft", paths: ["reports/fds_project_report_draft.md",  "../reports/fds_project_report_draft.md"],  filename: "fds_project_report_draft.md" },
+  { name: "Viva slides outline",  paths: ["reports/fds_viva_slides_outline.md",   "../reports/fds_viva_slides_outline.md"],   filename: "fds_viva_slides_outline.md" },
+];
+
+function renderEvidenceHeadline() {
+  if (!evidenceHeadline) return;
+  const lookup = {};
+  dataSummaryRows.forEach(r => { lookup[`${r.section}::${r.metric}`] = r.value; });
+  const tickers   = lookup["feature_panel::ticker_count"] ?? "—";
+  const weeklyObs = lookup["feature_panel::rows"]         ?? "—";
+  const modelRows = lookup["model_dataset::rows"]         ?? "—";
+  const dateStart = lookup["prices::date_start"]          ?? "";
+  const dateEnd   = lookup["prices::date_end"]            ?? "";
+  const dateRange = dateStart && dateEnd ? `${dateStart} → ${dateEnd}` : "—";
+  const textStatus = textualAnalysisRows[0]?.status ?? "—";
+  const textLabel  = textStatus === "ok" ? "Loaded" : textStatus === "no_text_file" ? "No text file" : textStatus.replaceAll("_", " ");
+  const textCls    = textStatus === "ok" ? "positive" : "";
+  evidenceHeadline.innerHTML = [
+    `<article class="evidence-tile"><span>Tickers</span><strong>${escapeHtml(String(tickers))}</strong></article>`,
+    `<article class="evidence-tile"><span>Weekly obs.</span><strong>${escapeHtml(String(weeklyObs))}</strong></article>`,
+    `<article class="evidence-tile"><span>Model rows</span><strong>${escapeHtml(String(modelRows))}</strong></article>`,
+    `<article class="evidence-tile"><span>Date range</span><strong style="font-size:.85rem">${escapeHtml(dateRange)}</strong></article>`,
+    `<article class="evidence-tile ${textCls}"><span>ESG text</span><strong>${escapeHtml(textLabel)}</strong></article>`,
+  ].join("");
+}
+
+function renderDataSummary() {
+  if (!dataSummaryContent) return;
+  dataSummaryBadge.textContent = dataSummaryRows.length ? `${dataSummaryRows.length} rows` : "";
+  if (!dataSummaryRows.length) {
+    dataSummaryContent.innerHTML = '<div class="empty-state">No data summary loaded.</div>';
+    return;
+  }
+  const sections = {};
+  dataSummaryRows.forEach(r => {
+    if (!sections[r.section]) sections[r.section] = [];
+    sections[r.section].push(r);
+  });
+  let html = "";
+  for (const [section, rows] of Object.entries(sections)) {
+    html += `<div class="evidence-subsection">
+      <span class="evidence-subsection-title">${escapeHtml(section)}</span>
+      <div class="table-shell"><table class="evidence-table">
+        <thead><tr><th>Metric</th><th>Value</th><th>Detail</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${escapeHtml(r.metric)}</td>
+            <td class="metric-value">${escapeHtml(String(r.value))}</td>
+            <td class="muted-cell">${escapeHtml(r.detail)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table></div>
+    </div>`;
+  }
+  dataSummaryContent.innerHTML = html;
+}
+
+function renderCleaningLog() {
+  if (!cleaningLogContent) return;
+  cleaningLogBadge.textContent = cleaningLogRows.length ? `${cleaningLogRows.length} checks` : "";
+  if (!cleaningLogRows.length) {
+    cleaningLogContent.innerHTML = '<div class="empty-state">No cleaning log loaded.</div>';
+    return;
+  }
+  cleaningLogContent.innerHTML = `<div class="table-shell"><table class="evidence-table">
+    <thead><tr><th>Dataset</th><th>Check</th><th>Value</th><th>Detail</th></tr></thead>
+    <tbody>${cleaningLogRows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.dataset)}</td>
+        <td>${escapeHtml(r.check)}</td>
+        <td class="metric-value">${escapeHtml(String(r.value))}</td>
+        <td class="muted-cell">${escapeHtml(r.detail)}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table></div>`;
+}
+
+function renderSqlEvidence() {
+  if (!sqlEvidenceContent) return;
+  sqlEvidenceBadge.textContent = sqlSummaryRows.length ? `${sqlSummaryRows.length} queries` : "";
+  if (!sqlSummaryRows.length) {
+    sqlEvidenceContent.innerHTML = '<div class="empty-state">No SQL evidence loaded.</div>';
+    return;
+  }
+  const cards = sqlSummaryRows.map(r => {
+    let resultHtml = "";
+    try {
+      const records = JSON.parse(r.result_json || "[]");
+      if (Array.isArray(records) && records.length && typeof records[0] === "object") {
+        const cols = Object.keys(records[0]);
+        resultHtml = `<div class="table-shell"><table class="sql-result-table">
+          <thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+          <tbody>${records.slice(0, 10).map(rec =>
+            `<tr>${cols.map(c => `<td>${escapeHtml(String(rec[c] ?? ""))}</td>`).join("")}</tr>`
+          ).join("")}</tbody>
+        </table></div>`;
+        if (records.length > 10) resultHtml += `<p class="status-text">Showing 10 of ${records.length} rows.</p>`;
+      } else {
+        resultHtml = `<p class="status-text">No result rows for this query.</p>`;
+      }
+    } catch {
+      resultHtml = `<p class="status-text">Could not parse result JSON.</p>`;
+    }
+    return `<div class="sql-query-card">
+      <div class="sql-query-name">${escapeHtml(r.query_name.replaceAll("_", " "))}</div>
+      <details class="sql-query-details">
+        <summary>View SQL</summary>
+        <pre class="sql-query-text">${escapeHtml(r.query)}</pre>
+      </details>
+      ${resultHtml}
+    </div>`;
+  });
+  sqlEvidenceContent.innerHTML = cards.join("");
+}
+
+function renderTextualAnalysis() {
+  if (!textualAnalysisContent) return;
+  if (!textualAnalysisRows.length) {
+    textualAnalysisBadge.textContent = "";
+    textualAnalysisContent.innerHTML = '<div class="empty-state">No textual analysis loaded.</div>';
+    return;
+  }
+  const status = textualAnalysisRows[0]?.status;
+  if (status !== "ok") {
+    const note = textualAnalysisRows[0]?.note || "";
+    textualAnalysisBadge.textContent = (status || "").replaceAll("_", " ");
+    textualAnalysisContent.innerHTML = `<div class="text-limitation-box">
+      <p><strong>Status: ${escapeHtml(status || "unknown")}</strong></p>
+      <p>${escapeHtml(note)}</p>
+      <p class="status-text">Limitation: supply a <code>controversy_text.csv</code> or <code>news_text.csv</code>
+      with ticker, date, and headline/text columns to enable direct sentiment analysis.</p>
+    </div>`;
+    return;
+  }
+  textualAnalysisBadge.textContent = `${textualAnalysisRows.length} weekly rows`;
+  const totalArticles = textualAnalysisRows.reduce((s, r) => s + (Number(r.article_count) || 0), 0);
+  const avgSentiment  = textualAnalysisRows.reduce((s, r) => s + (Number(r.text_sentiment_score) || 0), 0) / textualAnalysisRows.length;
+  const totalNeg      = textualAnalysisRows.reduce((s, r) => s + (Number(r.negative_word_count) || 0), 0);
+  const totalPos      = textualAnalysisRows.reduce((s, r) => s + (Number(r.positive_word_count) || 0), 0);
+  const totalKw       = textualAnalysisRows.reduce((s, r) => s + (Number(r.controversy_keyword_count) || 0), 0);
+  const tickers       = new Set(textualAnalysisRows.map(r => r.ticker).filter(Boolean)).size;
+  textualAnalysisContent.innerHTML = `
+    <div class="evidence-headline-grid" style="margin:12px 0 16px">
+      <article class="evidence-tile"><span>Articles</span><strong>${totalArticles.toLocaleString()}</strong></article>
+      <article class="evidence-tile"><span>Tickers</span><strong>${tickers}</strong></article>
+      <article class="evidence-tile"><span>Avg sentiment</span><strong>${avgSentiment.toFixed(4)}</strong></article>
+      <article class="evidence-tile"><span>Negative kw</span><strong>${totalNeg.toLocaleString()}</strong></article>
+      <article class="evidence-tile"><span>Positive kw</span><strong>${totalPos.toLocaleString()}</strong></article>
+      <article class="evidence-tile"><span>Controversy kw</span><strong>${totalKw.toLocaleString()}</strong></article>
+    </div>
+    <div class="table-shell"><table class="evidence-table">
+      <thead><tr><th>Ticker</th><th>Date</th><th>Articles</th><th>Sentiment</th><th>Neg</th><th>Pos</th><th>Controversy kw</th></tr></thead>
+      <tbody>${textualAnalysisRows.slice(0, 20).map(r => `
+        <tr>
+          <td>${escapeHtml(r.ticker || "")}</td>
+          <td>${escapeHtml(String(r.date || ""))}</td>
+          <td class="metric-value">${escapeHtml(String(r.article_count ?? ""))}</td>
+          <td class="metric-value">${Number.isFinite(Number(r.text_sentiment_score)) ? Number(r.text_sentiment_score).toFixed(4) : "—"}</td>
+          <td class="metric-value">${escapeHtml(String(r.negative_word_count ?? ""))}</td>
+          <td class="metric-value">${escapeHtml(String(r.positive_word_count ?? ""))}</td>
+          <td class="metric-value">${escapeHtml(String(r.controversy_keyword_count ?? ""))}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>
+    ${textualAnalysisRows.length > 20 ? `<p class="status-text">Showing 20 of ${textualAnalysisRows.length} rows.</p>` : ""}`;
+}
+
+async function renderReportFigures() {
+  if (!reportFigures) return;
+  const cards = await Promise.all(REPORT_FIGURES.map(async fig => {
+    let src = null;
+    for (const path of fig.paths) {
+      try {
+        const res = await fetch(path, { method: "HEAD", cache: "no-store" });
+        if (res.ok) { src = path; break; }
+      } catch { /* try next path */ }
+    }
+    if (src) {
+      return `<div class="report-figure-card">
+        <div class="report-figure-img"><img src="${escapeHtml(src)}" alt="${escapeHtml(fig.name)}" loading="lazy"></div>
+        <p class="report-figure-name">${escapeHtml(fig.name)}</p>
+      </div>`;
+    }
+    return `<div class="report-figure-card report-figure-placeholder">
+      <div class="report-figure-empty">Not generated yet</div>
+      <p class="report-figure-name">${escapeHtml(fig.name)}</p>
+    </div>`;
+  }));
+  const anyMissing = cards.some(c => c.includes("report-figure-placeholder"));
+  reportFigures.innerHTML = cards.join("")
+    + (anyMissing ? `<p class="status-text" style="grid-column:1/-1;margin-top:8px">Run the backend locally to regenerate report figures.</p>` : "");
+}
+
+async function renderReportDownloads() {
+  if (!reportDownloads) return;
+  const items = await Promise.all(REPORT_ARTIFACTS.map(async a => {
+    let href = null;
+    for (const path of a.paths) {
+      try {
+        const res = await fetch(path, { method: "HEAD", cache: "no-store" });
+        if (res.ok) { href = path; break; }
+      } catch { /* try next */ }
+    }
+    if (href) {
+      return `<a class="download-link" href="${escapeHtml(href)}" download="${escapeHtml(a.filename)}">
+        <span>${escapeHtml(a.name)}</span>
+        <small>${escapeHtml(href)}</small>
+      </a>`;
+    }
+    return `<div class="download-unavailable">
+      <span>${escapeHtml(a.name)}</span>
+      <small>Not generated yet</small>
+    </div>`;
+  }));
+  const anyMissing = items.some(i => i.includes("download-unavailable"));
+  reportDownloads.innerHTML = items.join("")
+    + (anyMissing ? `<p class="status-text" style="grid-column:1/-1;margin-top:8px">Run the backend locally to generate these files.</p>` : "");
+}
+
 /* ── Setters (called after load) ───────────────────────────────────────── */
 function setRows(rows, msg) {
   allRows = rows.map(normalizeScore).filter(r => r.ticker);
@@ -786,6 +1095,29 @@ function setBizRows(rows, msg) {
   renderBizAnalysis();
 }
 
+function setDataSummaryRows(rows, msg) {
+  dataSummaryRows = rows;
+  if (evidenceStatus) evidenceStatus.textContent = msg;
+  renderEvidenceHeadline();
+  renderDataSummary();
+}
+
+function setCleaningLogRows(rows) {
+  cleaningLogRows = rows;
+  renderCleaningLog();
+}
+
+function setSqlSummaryRows(rows) {
+  sqlSummaryRows = rows;
+  renderSqlEvidence();
+}
+
+function setTextualAnalysisRows(rows) {
+  textualAnalysisRows = rows;
+  renderTextualAnalysis();
+  renderEvidenceHeadline();
+}
+
 /* ── File I/O ──────────────────────────────────────────────────────────── */
 function selectedFile(input, label) {
   const [file] = Array.from(input.files || []);
@@ -800,8 +1132,59 @@ function fileListLabel(input) {
   return `${files.length} files selected`;
 }
 
+function looksLikeDemoUniverse(rows) {
+  const tickers = new Set(rows.map(row => String(row.ticker || "").toUpperCase()).filter(Boolean));
+  if (!tickers.size) return false;
+  let demoMatches = 0;
+  tickers.forEach(ticker => { if (DEMO_TICKERS.has(ticker)) demoMatches += 1; });
+  return demoMatches >= Math.min(4, tickers.size) && tickers.size <= DEMO_TICKERS.size;
+}
+
 function updateFileStatus(input, statusEl) {
   if (input && statusEl) statusEl.textContent = fileListLabel(input);
+}
+
+function progressStage(percent) {
+  if (percent >= 100) return "Score complete";
+  if (percent >= 82) return "Returning dashboard outputs";
+  if (percent >= 62) return "Training and scoring";
+  if (percent >= 36) return "Building crash-risk features";
+  if (percent >= 16) return "Validating raw files";
+  return "Uploading files";
+}
+
+function setLiveProgress(percent, hint) {
+  if (!liveScoreProgress) return;
+  liveProgressPercent = Math.max(0, Math.min(100, Math.round(percent)));
+  liveScoreProgress.hidden = false;
+  liveProgressLabel.textContent = progressStage(liveProgressPercent);
+  liveProgressValue.textContent = `${liveProgressPercent}%`;
+  liveProgressBar.style.width = `${liveProgressPercent}%`;
+  liveProgressTrack.setAttribute("aria-valuenow", String(liveProgressPercent));
+  if (hint) liveProgressHint.textContent = hint;
+}
+
+function startLiveProgress() {
+  window.clearInterval(liveProgressTimer);
+  setLiveProgress(7, "The hosted Python model is processing your uploaded files.");
+  liveProgressTimer = window.setInterval(() => {
+    const remaining = 92 - liveProgressPercent;
+    if (remaining <= 0) return;
+    const step = liveProgressPercent < 40 ? 7 : liveProgressPercent < 70 ? 4 : 2;
+    setLiveProgress(liveProgressPercent + Math.min(step, Math.max(1, remaining)));
+  }, 750);
+}
+
+function finishLiveProgress(success) {
+  window.clearInterval(liveProgressTimer);
+  liveProgressTimer = null;
+  setLiveProgress(
+    success ? 100 : Math.max(liveProgressPercent, 92),
+    success
+      ? "Scoring finished. The dashboard has been updated."
+      : "Scoring did not finish. Check the status message above for the reason."
+  );
+  if (!success) liveProgressLabel.textContent = "Scoring failed";
 }
 
 function setLiveScoreBusy(isBusy) {
@@ -906,6 +1289,7 @@ async function runLiveApiScore(event) {
   }
 
   setLiveScoreBusy(true);
+  startLiveProgress();
   apiStatus.textContent = "Scoring raw files with the Python backend...";
   try {
     const response = await fetch(apiEndpoint(), { method: "POST", body: form });
@@ -921,9 +1305,20 @@ async function runLiveApiScore(event) {
     setAlgoRows(payload.algorithm_comparison || [], "Loaded live algorithm comparison.");
     setImportanceRows(payload.feature_importance || [], "Loaded live feature importance.");
     setBizRows(payload.business_analysis || [], "Loaded live business analysis.");
-    apiStatus.textContent = `Scored ${payload.metadata?.score_count || 0} rows from raw uploaded data.`;
+    setDataSummaryRows(payload.data_summary || [], `Loaded ${payload.data_summary?.length || 0} data summary rows from API.`);
+    setCleaningLogRows(payload.cleaning_log || []);
+    setSqlSummaryRows(payload.sql_summary || []);
+    setTextualAnalysisRows(payload.textual_analysis || []);
+    renderReportFigures();
+    renderReportDownloads();
+    const scoreCount = payload.metadata?.score_count || 0;
+    apiStatus.textContent = looksLikeDemoUniverse(payload.scores || [])
+      ? `Scored ${scoreCount} rows, but they are the demo universe. Upload the 50-ticker files from data/raw or data/raw_yfinance.`
+      : `Scored ${scoreCount} rows from raw uploaded data.`;
+    finishLiveProgress(true);
   } catch (err) {
     apiStatus.textContent = `API scoring failed: ${err.message}`;
+    finishLiveProgress(false);
   } finally {
     setLiveScoreBusy(false);
   }
@@ -1021,6 +1416,38 @@ async function loadDefaultBizAnalysis() {
   } catch { setBizRows(DEMO_BIZ_ROWS, "Demo business analysis is showing until you run a live upload."); }
 }
 
+async function loadDefaultDataSummary() {
+  try {
+    const rows = await loadCsvFirst(["outputs/data_summary.csv", "../outputs/data_summary.csv"]);
+    if (!rows.length) throw new Error("empty");
+    setDataSummaryRows(rows, `Loaded ${rows.length} data summary rows.`);
+  } catch { setDataSummaryRows(DEMO_DATA_SUMMARY, "Demo data summary is showing until you run a live upload."); }
+}
+
+async function loadDefaultCleaningLog() {
+  try {
+    const rows = await loadCsvFirst(["outputs/cleaning_log.csv", "../outputs/cleaning_log.csv"]);
+    if (!rows.length) throw new Error("empty");
+    setCleaningLogRows(rows);
+  } catch { setCleaningLogRows(DEMO_CLEANING_LOG); }
+}
+
+async function loadDefaultSqlSummary() {
+  try {
+    const rows = await loadCsvFirst(["outputs/sql_summary.csv", "../outputs/sql_summary.csv"]);
+    if (!rows.length) throw new Error("empty");
+    setSqlSummaryRows(rows);
+  } catch { setSqlSummaryRows(DEMO_SQL_SUMMARY); }
+}
+
+async function loadDefaultTextualAnalysis() {
+  try {
+    const rows = await loadCsvFirst(["outputs/textual_analysis.csv", "../outputs/textual_analysis.csv"]);
+    if (!rows.length) throw new Error("empty");
+    setTextualAnalysisRows(rows);
+  } catch { setTextualAnalysisRows(DEMO_TEXTUAL_ANALYSIS); }
+}
+
 /* ── Event listeners ───────────────────────────────────────────────────── */
 attachSectionInfoButtons();
 
@@ -1062,3 +1489,9 @@ loadDefaultComparison();
 loadDefaultAlgoComparison();
 loadDefaultImportance();
 loadDefaultBizAnalysis();
+loadDefaultDataSummary();
+loadDefaultCleaningLog();
+loadDefaultSqlSummary();
+loadDefaultTextualAnalysis();
+renderReportFigures();
+renderReportDownloads();
