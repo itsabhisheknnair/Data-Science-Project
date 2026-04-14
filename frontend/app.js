@@ -91,12 +91,24 @@ let selectedTicker = "";
 const uploadInput       = document.querySelector("#scoreUpload");
 const historyUploadInput = document.querySelector("#historyUpload");
 const apiUploadForm     = document.querySelector("#apiUploadForm");
+const sampleGuideButton = document.querySelector("#sampleGuideButton");
+const sampleGuideModal  = document.querySelector("#sampleGuideModal");
+const sampleGuideClose  = document.querySelector("#sampleGuideClose");
+const sectionInfoModal  = document.querySelector("#sectionInfoModal");
+const sectionInfoClose  = document.querySelector("#sectionInfoClose");
+const sectionInfoTitle  = document.querySelector("#sectionInfoTitle");
+const sectionInfoBody   = document.querySelector("#sectionInfoBody");
 const rawPrices         = document.querySelector("#rawPrices");
 const rawBenchmark      = document.querySelector("#rawBenchmark");
 const rawFundamentals   = document.querySelector("#rawFundamentals");
 const rawControversies  = document.querySelector("#rawControversies");
+const rawPricesStatus   = document.querySelector("#rawPricesStatus");
+const rawBenchmarkStatus = document.querySelector("#rawBenchmarkStatus");
+const rawFundamentalsStatus = document.querySelector("#rawFundamentalsStatus");
+const rawControversiesStatus = document.querySelector("#rawControversiesStatus");
 const apiTune           = document.querySelector("#apiTune");
 const apiStatus         = document.querySelector("#apiStatus");
+const runLiveScoreButton = document.querySelector("#runLiveScoreButton");
 const bucketFilter      = document.querySelector("#bucketFilter");
 const tickerSearch      = document.querySelector("#tickerSearch");
 const dataStatus        = document.querySelector("#dataStatus");
@@ -126,6 +138,141 @@ const priceP05          = document.querySelector("#priceP05");
 const priceP50          = document.querySelector("#priceP50");
 const priceP95          = document.querySelector("#priceP95");
 const API_BASE_URL      = "https://crashrisk-api.onrender.com";
+
+const SECTION_INFO = {
+  "live-scoring": {
+    title: "Live scoring",
+    lead: "This is the main product workflow. Upload four raw Bloomberg-style exports and the hosted Python backend builds the feature panel, scores the crash-risk model, and returns dashboard-ready results.",
+    points: [
+      "prices gives stock price and volume history. The backend turns this into weekly returns, volatility, turnover, and crash-risk inputs.",
+      "benchmark_prices gives the market reference series, such as S&P 500 or SPY. It is used for firm-specific residual returns and downside beta.",
+      "fundamentals gives market cap, shares outstanding, leverage, market-to-book, and ROA. These controls help separate ESG controversy risk from ordinary firm characteristics.",
+      "controversies is the ESG controversy signal. The model uses the score level, changes, spikes, rolling behavior, and sector-relative position.",
+      "The API URL is fixed in code, so the user does not need to type the Render backend link."
+    ],
+    note: "Use this section for fresh predictions from raw data."
+  },
+  "advanced-uploads": {
+    title: "Advanced saved CSV loading",
+    lead: "This is a replay mode, not the normal prediction flow. It skips the backend and simply loads files that have already been produced by a previous backend run.",
+    points: [
+      "stock_scores.csv contains final scored rows: ticker, as-of date, crash probability, Low/Medium/High bucket, and top model drivers.",
+      "price_history.csv contains historical adjusted close prices for the chart.",
+      "price_scenarios.csv contains the 13-week p05, p50, and p95 scenario range used in the projection graph.",
+      "This is useful for backup demos, offline testing, or checking a previous model run without uploading raw Bloomberg files again."
+    ],
+    note: "Live scoring generates new results; Advanced only displays existing results."
+  },
+  "risk-summary": {
+    title: "Risk summary",
+    lead: "These tiles give a quick read of the scored universe currently loaded on the dashboard.",
+    points: [
+      "Total names is the number of stocks currently scored.",
+      "High risk counts how many names fall into the top-risk bucket.",
+      "Average probability is the mean crash-risk probability across the loaded universe.",
+      "As of is the latest scoring date in the loaded results."
+    ],
+    note: "Use this as the first sanity check after a live upload."
+  },
+  "top-names": {
+    title: "Top names",
+    lead: "This ranks stocks by model-implied crash probability so a portfolio manager can quickly see which names deserve attention first.",
+    points: [
+      "Higher bars mean higher predicted crash vulnerability.",
+      "The bucket color shows whether each stock is Low, Medium, or High risk.",
+      "This is a triage view, not a buy/sell recommendation."
+    ],
+    note: "The stock table below gives the same signal with dates and top drivers."
+  },
+  "data-contract": {
+    title: "Data contract",
+    lead: "This is the minimum schema the backend expects for the raw Bloomberg-style input files.",
+    points: [
+      "The backend validates these columns before scoring so missing fields fail clearly.",
+      "Dates are aligned carefully to avoid look-ahead bias.",
+      "Fundamentals are treated as available after a reporting lag, rather than as if they were known immediately on the period-end date.",
+      "The controversy file should include sector so the backend can compute sector-relative controversy percentiles."
+    ],
+    note: "The Sample file guide shows small CSV examples of this schema."
+  },
+  "filters": {
+    title: "Filters",
+    lead: "These controls narrow what you see without changing the model output.",
+    points: [
+      "Risk bucket filters the table and top-name view to High, Medium, Low, or All names.",
+      "Ticker search lets you jump to a specific stock.",
+      "When a ticker is selected, the 13-week scenario chart updates to that ticker."
+    ],
+    note: "Filtering is display-only; it does not rerun the model."
+  },
+  "price-scenario": {
+    title: "13-week scenario range",
+    lead: "This graph is a scenario range, not a single price forecast. It shows recent price history and a volatility-based 13-week range adjusted for crash probability.",
+    points: [
+      "The historical line comes from adjusted close prices.",
+      "p50 is set to the latest price so we do not pretend to have a precise return forecast.",
+      "p05 is the downside scenario. It is widened when crash probability is higher.",
+      "p95 is the upside scenario based on historical volatility.",
+      "This is useful for discussing downside exposure in a fund demo, but it is not a guaranteed future price path."
+    ],
+    note: "Funds usually trust scenario ranges more than point price predictions."
+  },
+  "stock-table": {
+    title: "Stock risk table",
+    lead: "This is the main stock-level output of the crash-risk model.",
+    points: [
+      "crash_probability is the model's estimated probability that a stock belongs in the future high crash-risk bucket.",
+      "risk_bucket converts the probability into Low, Medium, or High for easier business use.",
+      "top_drivers lists the strongest standardized coefficient contributions for that stock.",
+      "Clicking a row selects that ticker and updates the scenario chart."
+    ],
+    note: "This is the clearest section to show after live scoring finishes."
+  },
+  "feature-importance": {
+    title: "Feature importance",
+    lead: "This explains which inputs matter most in the fitted model overall.",
+    points: [
+      "For logistic regression, importance is based on standardized coefficient magnitude.",
+      "Large values mean the feature has a stronger association with the model's crash-risk classification.",
+      "This helps explain whether ESG controversy features, turnover, downside beta, volatility, and fundamentals are driving the signal.",
+      "Feature importance is not causal proof; it is model interpretation."
+    ],
+    note: "Use this to explain why the model is flagging names."
+  },
+  "algorithm-comparison": {
+    title: "Algorithm comparison",
+    lead: "This compares candidate classifiers on the same chronological finance split.",
+    points: [
+      "ROC-AUC measures how well the model ranks future risky names above safer names.",
+      "Precision at top bucket asks how accurate the top-risk flags are.",
+      "Crash capture asks how many future high-risk names were caught in the top bucket.",
+      "Chronological splits matter because random splits leak future market information into the past."
+    ],
+    note: "This section supports model selection, not individual stock decisions."
+  },
+  "esg-validation": {
+    title: "ESG controversy validation",
+    lead: "This is the key research question: does ESG controversy data improve crash-risk prediction beyond a traditional non-ESG benchmark?",
+    points: [
+      "The baseline model uses crash, turnover, downside-risk, volatility, return, and fundamental variables.",
+      "The full model adds ESG controversy variables such as score level, changes, rolling behavior, spike flag, and sector percentile.",
+      "The lift row is full model minus baseline on the same out-of-sample split.",
+      "Positive lift in ROC-AUC, precision, or crash capture supports the claim that ESG controversy adds risk signal."
+    ],
+    note: "This is the section to cite when explaining ESG and risk econometrically."
+  },
+  "business-analysis": {
+    title: "Business analysis",
+    lead: "This translates the model into a simple fund-use case: avoid or review names flagged as High crash risk, then compare the resulting portfolio behavior.",
+    points: [
+      "The strategy is illustrative: equal-weight stocks not flagged as High risk.",
+      "The benchmark is the equal-weighted full universe.",
+      "Metrics such as alpha, Sharpe, Sortino, drawdown, VaR, and CVaR describe whether the overlay could add economic value.",
+      "The AUM and team-cost assumptions turn model performance into a rough business case."
+    ],
+    note: "Treat this as a product-demo overlay until tested on real Bloomberg history."
+  }
+};
 
 /* ── CSV parser ────────────────────────────────────────────────────────── */
 function parseCsvRecords(text) {
@@ -357,7 +504,7 @@ function renderChart() {
   const score    = allRows.find(r => r.ticker === selectedTicker);
   chartTitle.textContent = selectedTicker ? `${selectedTicker} price scenario` : "Select a ticker";
   if (!selectedTicker || history.length < 2 || !scenario) {
-    chartStatus.textContent = "Run the backend demo or load price_history.csv and price_scenarios.csv.";
+    chartStatus.textContent = "Upload raw files for a live score, or load price_history.csv and price_scenarios.csv.";
     priceChart.innerHTML = '<div class="empty-state">No price scenario for selected ticker.</div>';
     latestPrice.textContent = priceP05.textContent = priceP50.textContent = priceP95.textContent = "-";
     return;
@@ -646,8 +793,101 @@ function selectedFile(input, label) {
   return file;
 }
 
+function fileListLabel(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length) return "No file selected";
+  if (files.length === 1) return files[0].name;
+  return `${files.length} files selected`;
+}
+
+function updateFileStatus(input, statusEl) {
+  if (input && statusEl) statusEl.textContent = fileListLabel(input);
+}
+
+function setLiveScoreBusy(isBusy) {
+  runLiveScoreButton.disabled = isBusy;
+  runLiveScoreButton.textContent = isBusy ? "Scoring..." : "Run live score";
+  apiUploadForm.setAttribute("aria-busy", String(isBusy));
+}
+
 function apiEndpoint() {
   return `${API_BASE_URL}/predict`;
+}
+
+function openSampleGuide() {
+  if (typeof sampleGuideModal.showModal === "function") sampleGuideModal.showModal();
+  else sampleGuideModal.setAttribute("open", "");
+}
+
+function closeSampleGuide() {
+  if (typeof sampleGuideModal.close === "function") sampleGuideModal.close();
+  else sampleGuideModal.removeAttribute("open");
+}
+
+function renderSectionInfo(info) {
+  sectionInfoTitle.textContent = info.title;
+  sectionInfoBody.innerHTML = "";
+
+  const lead = document.createElement("p");
+  lead.className = "info-lead";
+  lead.textContent = info.lead;
+  sectionInfoBody.appendChild(lead);
+
+  const list = document.createElement("ul");
+  info.points.forEach(point => {
+    const item = document.createElement("li");
+    item.textContent = point;
+    list.appendChild(item);
+  });
+  sectionInfoBody.appendChild(list);
+
+  if (info.note) {
+    const note = document.createElement("p");
+    note.className = "info-note";
+    note.textContent = info.note;
+    sectionInfoBody.appendChild(note);
+  }
+}
+
+function openSectionInfo(key) {
+  const info = SECTION_INFO[key];
+  if (!info) return;
+  renderSectionInfo(info);
+  if (typeof sectionInfoModal.showModal === "function") sectionInfoModal.showModal();
+  else sectionInfoModal.setAttribute("open", "");
+}
+
+function closeSectionInfo() {
+  if (typeof sectionInfoModal.close === "function") sectionInfoModal.close();
+  else sectionInfoModal.removeAttribute("open");
+}
+
+function attachSectionInfoButtons() {
+  document.querySelectorAll("[data-info-key]").forEach(section => {
+    const key = section.dataset.infoKey;
+    if (!SECTION_INFO[key]) return;
+
+    const button = document.createElement("button");
+    button.className = "section-info-button";
+    button.type = "button";
+    button.textContent = "i";
+    button.setAttribute("aria-label", `Explain ${SECTION_INFO[key].title}`);
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openSectionInfo(key);
+    });
+
+    const target = Array.from(section.children).find(child =>
+      child.classList?.contains("section-heading") || child.tagName === "SUMMARY"
+    );
+
+    if (target) target.appendChild(button);
+    else {
+      button.classList.add("floating");
+      section.appendChild(button);
+    }
+  });
 }
 
 async function runLiveApiScore(event) {
@@ -665,6 +905,7 @@ async function runLiveApiScore(event) {
     return;
   }
 
+  setLiveScoreBusy(true);
   apiStatus.textContent = "Scoring raw files with the Python backend...";
   try {
     const response = await fetch(apiEndpoint(), { method: "POST", body: form });
@@ -683,6 +924,8 @@ async function runLiveApiScore(event) {
     apiStatus.textContent = `Scored ${payload.metadata?.score_count || 0} rows from raw uploaded data.`;
   } catch (err) {
     apiStatus.textContent = `API scoring failed: ${err.message}`;
+  } finally {
+    setLiveScoreBusy(false);
   }
 }
 
@@ -692,7 +935,7 @@ function loadUploadedFile(file) {
     const rows = parseCsvRecords(String(reader.result || ""));
     setRows(rows, `Loaded ${rows.length} score rows from ${file.name}.`);
   };
-  reader.onerror = () => setRows(DEMO_ROWS, "Could not read that file. Showing demo scores.");
+  reader.onerror = () => setRows(DEMO_ROWS, "Could not read that file. Demo scores restored.");
   reader.readAsText(file);
 }
 
@@ -731,7 +974,7 @@ async function loadDefaultScores() {
     const rows = await loadCsvFirst(["outputs/stock_scores.csv", "../outputs/stock_scores.csv"]);
     if (!rows.length) throw new Error("empty");
     setRows(rows, `Loaded ${rows.length} scores from outputs/stock_scores.csv.`);
-  } catch { setRows(DEMO_ROWS, "Showing demo scores. Upload outputs/stock_scores.csv after a backend run."); }
+  } catch { setRows(DEMO_ROWS, "Demo scores are showing until you run a live upload."); }
 }
 
 async function loadDefaultPriceData() {
@@ -742,7 +985,7 @@ async function loadDefaultPriceData() {
     ]);
     setPriceData(h, s, `Loaded ${h.length} history and ${s.length} scenario rows.`);
   } catch {
-    setPriceData(DEMO_PRICE_HISTORY, DEMO_PRICE_SCENARIOS, "Showing demo prices. Serve the folder or upload price files.");
+    setPriceData(DEMO_PRICE_HISTORY, DEMO_PRICE_SCENARIOS, "Demo price scenarios are showing until you run a live upload.");
   }
 }
 
@@ -751,7 +994,7 @@ async function loadDefaultComparison() {
     const rows = await loadCsvFirst(["outputs/esg_model_comparison.csv", "../outputs/esg_model_comparison.csv"]);
     if (!rows.length) throw new Error("empty");
     setComparisonRows(rows, `Loaded ${rows.length} ESG comparison rows.`);
-  } catch { setComparisonRows(DEMO_COMPARISON_ROWS, "Showing demo ESG lift. Run backend to replace."); }
+  } catch { setComparisonRows(DEMO_COMPARISON_ROWS, "Demo ESG lift is showing until you run a live upload."); }
 }
 
 async function loadDefaultAlgoComparison() {
@@ -759,7 +1002,7 @@ async function loadDefaultAlgoComparison() {
     const rows = await loadCsvFirst(["outputs/algorithm_comparison.csv", "../outputs/algorithm_comparison.csv"]);
     if (!rows.length) throw new Error("empty");
     setAlgoRows(rows, `Loaded ${rows.length} algorithm comparison rows.`);
-  } catch { setAlgoRows(DEMO_ALGO_ROWS, "Showing demo algorithm comparison. Run backend to replace."); }
+  } catch { setAlgoRows(DEMO_ALGO_ROWS, "Demo algorithm comparison is showing until you run a live upload."); }
 }
 
 async function loadDefaultImportance() {
@@ -767,7 +1010,7 @@ async function loadDefaultImportance() {
     const rows = await loadCsvFirst(["outputs/feature_importance.csv", "../outputs/feature_importance.csv"]);
     if (!rows.length) throw new Error("empty");
     setImportanceRows(rows, `Loaded ${rows.length} feature importance rows.`);
-  } catch { setImportanceRows(DEMO_IMPORTANCE, "Showing demo feature importance. Run backend to replace."); }
+  } catch { setImportanceRows(DEMO_IMPORTANCE, "Demo feature importance is showing until you run a live upload."); }
 }
 
 async function loadDefaultBizAnalysis() {
@@ -775,10 +1018,12 @@ async function loadDefaultBizAnalysis() {
     const rows = await loadCsvFirst(["outputs/business_analysis.csv", "../outputs/business_analysis.csv"]);
     if (!rows.length) throw new Error("empty");
     setBizRows(rows, `Loaded ${rows.length} business analysis rows.`);
-  } catch { setBizRows(DEMO_BIZ_ROWS, "Showing demo business analysis. Run backend to replace."); }
+  } catch { setBizRows(DEMO_BIZ_ROWS, "Demo business analysis is showing until you run a live upload."); }
 }
 
 /* ── Event listeners ───────────────────────────────────────────────────── */
+attachSectionInfoButtons();
+
 uploadInput.addEventListener("change", e => {
   const [file] = e.target.files;
   if (file) loadUploadedFile(file);
@@ -787,7 +1032,20 @@ historyUploadInput.addEventListener("change", e => {
   const files = Array.from(e.target.files || []);
   if (files.length) loadUploadedPriceFiles(files);
 });
+rawPrices.addEventListener("change", () => updateFileStatus(rawPrices, rawPricesStatus));
+rawBenchmark.addEventListener("change", () => updateFileStatus(rawBenchmark, rawBenchmarkStatus));
+rawFundamentals.addEventListener("change", () => updateFileStatus(rawFundamentals, rawFundamentalsStatus));
+rawControversies.addEventListener("change", () => updateFileStatus(rawControversies, rawControversiesStatus));
 apiUploadForm.addEventListener("submit", runLiveApiScore);
+sampleGuideButton.addEventListener("click", openSampleGuide);
+sampleGuideClose.addEventListener("click", closeSampleGuide);
+sampleGuideModal.addEventListener("click", e => {
+  if (e.target === sampleGuideModal) closeSampleGuide();
+});
+sectionInfoClose.addEventListener("click", closeSectionInfo);
+sectionInfoModal.addEventListener("click", e => {
+  if (e.target === sectionInfoModal) closeSectionInfo();
+});
 bucketFilter.addEventListener("change", () => {
   selectTickerFromFilters({ preferSearch: true });
   render();

@@ -26,69 +26,151 @@
 
     <main>
       <!-- ── Toolbar ──────────────────────────────────────────────────── -->
-      <section class="toolbar" aria-label="Score controls">
-        <div>
-          <label for="scoreUpload">Load stock_scores.csv</label>
-          <input id="scoreUpload" type="file" accept=".csv,text/csv">
-          <p id="dataStatus" class="status-text">Waiting for model scores.</p>
-        </div>
-        <div>
-          <label for="historyUpload">Load price files</label>
-          <input id="historyUpload" type="file" accept=".csv,text/csv" multiple>
-          <p id="priceStatus" class="status-text">Waiting for price scenarios.</p>
-        </div>
-        <div>
-          <label for="bucketFilter">Risk bucket</label>
-          <select id="bucketFilter">
-            <option value="All">All</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-          </select>
-        </div>
-        <div>
-          <label for="tickerSearch">Ticker</label>
-          <input id="tickerSearch" type="search" placeholder="Search ticker">
-        </div>
-      </section>
-
       <!-- ── Summary KPIs ─────────────────────────────────────────────── -->
-      <section class="api-panel" aria-label="Live backend upload">
+      <section class="api-panel live-score-panel" aria-label="Live backend upload" data-info-key="live-scoring">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Live scoring</p>
             <h2>Upload raw Bloomberg-style files</h2>
           </div>
-          <p id="apiStatus" class="status-text">Using the hosted Python model backend.</p>
+          <div class="heading-actions">
+            <button id="sampleGuideButton" class="secondary-button" type="button">Sample file guide</button>
+            <p id="apiStatus" class="status-text">Demo data is shown until live files are uploaded and scored.</p>
+          </div>
         </div>
+        <p class="section-description">
+          Upload the four raw Bloomberg-style exports, then run the hosted model. The API URL is fixed behind the scenes.
+        </p>
         <form id="apiUploadForm" class="api-form">
-          <div>
-            <label for="rawPrices">prices</label>
-            <input id="rawPrices" type="file" accept=".csv,.xlsx,.xls">
-          </div>
-          <div>
-            <label for="rawBenchmark">benchmark_prices</label>
-            <input id="rawBenchmark" type="file" accept=".csv,.xlsx,.xls">
-          </div>
-          <div>
-            <label for="rawFundamentals">fundamentals</label>
-            <input id="rawFundamentals" type="file" accept=".csv,.xlsx,.xls">
-          </div>
-          <div>
-            <label for="rawControversies">controversies</label>
-            <input id="rawControversies" type="file" accept=".csv,.xlsx,.xls">
-          </div>
+          <label class="file-card upload-card" for="rawPrices">
+            <span>Raw input</span>
+            <strong>prices</strong>
+            <small>ticker, date, adj_close, volume</small>
+            <em id="rawPricesStatus">No file selected</em>
+          </label>
+          <input id="rawPrices" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
+          <label class="file-card upload-card" for="rawBenchmark">
+            <span>Raw input</span>
+            <strong>benchmark_prices</strong>
+            <small>date, benchmark_close</small>
+            <em id="rawBenchmarkStatus">No file selected</em>
+          </label>
+          <input id="rawBenchmark" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
+          <label class="file-card upload-card" for="rawFundamentals">
+            <span>Raw input</span>
+            <strong>fundamentals</strong>
+            <small>ticker, period_end, market cap, ratios</small>
+            <em id="rawFundamentalsStatus">No file selected</em>
+          </label>
+          <input id="rawFundamentals" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
+          <label class="file-card upload-card" for="rawControversies">
+            <span>Raw input</span>
+            <strong>controversies</strong>
+            <small>ticker, date, sector, score</small>
+            <em id="rawControversiesStatus">No file selected</em>
+          </label>
+          <input id="rawControversies" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
           <div class="api-actions">
             <label class="checkbox-label">
               <input id="apiTune" type="checkbox">
               Tune models
             </label>
-            <button type="submit">Run live score</button>
+            <button id="runLiveScoreButton" type="submit">Run live score</button>
           </div>
         </form>
       </section>
 
-      <section class="metrics-grid" aria-label="Risk summary">
+      <details class="advanced-panel" data-info-key="advanced-uploads">
+        <summary>
+          <span>Advanced</span>
+          <strong>Load saved dashboard CSVs</strong>
+        </summary>
+        <p class="section-description">
+          Use this only for testing or demo recovery when you already have backend output files.
+        </p>
+        <div class="toolbar-file-grid">
+          <label class="file-card" for="scoreUpload">
+            <span>Stock scores</span>
+            <strong>Choose stock_scores.csv</strong>
+            <small id="dataStatus" class="status-text">Demo scores are showing until you run a live upload.</small>
+          </label>
+          <input id="scoreUpload" class="visually-hidden" type="file" accept=".csv,text/csv">
+
+          <label class="file-card" for="historyUpload">
+            <span>Price scenarios</span>
+            <strong>Choose price history and scenario CSVs</strong>
+            <small id="priceStatus" class="status-text">Demo price scenarios are showing until you run a live upload.</small>
+          </label>
+          <input id="historyUpload" class="visually-hidden" type="file" accept=".csv,text/csv" multiple>
+        </div>
+      </details>
+
+      <dialog id="sampleGuideModal" class="sample-modal">
+        <div class="sample-modal-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Sample files</p>
+              <h2>What each upload needs</h2>
+            </div>
+            <button id="sampleGuideClose" class="secondary-button" type="button">Close</button>
+          </div>
+          <p class="section-description">
+            These samples show the required schema. Real live scoring needs fuller historical data than the tiny sample rows.
+          </p>
+          <div class="sample-guide-grid">
+            <article>
+              <strong>Load stock_scores.csv</strong>
+              <a href="samples/stock_scores.csv" download>Download stock_scores.csv</a>
+              <p>Already-scored dashboard output: ticker, date, crash probability, bucket, and drivers.</p>
+            </article>
+            <article>
+              <strong>Load price files</strong>
+              <a href="samples/price_history.csv" download>Download price_history.csv</a>
+              <a href="samples/price_scenarios.csv" download>Download price_scenarios.csv</a>
+              <p>Historical adjusted closes plus projected p05/p50/p95 scenario range.</p>
+            </article>
+            <article>
+              <strong>prices</strong>
+              <a href="samples/prices.csv" download>Download prices.csv</a>
+              <p>Raw stock file: ticker, date, adjusted close, and volume.</p>
+            </article>
+            <article>
+              <strong>benchmark_prices</strong>
+              <a href="samples/benchmark_prices.csv" download>Download benchmark_prices.csv</a>
+              <p>Market benchmark close series used for residual returns and downside beta.</p>
+            </article>
+            <article>
+              <strong>fundamentals</strong>
+              <a href="samples/fundamentals.csv" download>Download fundamentals.csv</a>
+              <p>Market cap, shares outstanding, market-to-book, leverage, and ROA.</p>
+            </article>
+            <article>
+              <strong>controversies</strong>
+              <a href="samples/controversies.csv" download>Download controversies.csv</a>
+              <p>ESG controversy score by ticker/date/sector.</p>
+            </article>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog id="sectionInfoModal" class="sample-modal info-modal">
+        <div class="sample-modal-card info-modal-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Section guide</p>
+              <h2 id="sectionInfoTitle">Dashboard section</h2>
+            </div>
+            <button id="sectionInfoClose" class="secondary-button" type="button">Close</button>
+          </div>
+          <div id="sectionInfoBody" class="info-modal-body"></div>
+        </div>
+      </dialog>
+
+      <section class="metrics-grid" aria-label="Risk summary" data-info-key="risk-summary">
         <article class="metric-tile">
           <span>Total names</span>
           <strong id="metricTotal">0</strong>
@@ -109,7 +191,7 @@
 
       <!-- ── Top names + data contract ────────────────────────────────── -->
       <section class="dashboard-grid">
-        <div class="risk-panel">
+        <div class="risk-panel" data-info-key="top-names">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Highest probabilities</p>
@@ -119,7 +201,7 @@
           <div id="riskBars" class="risk-bars" aria-live="polite"></div>
         </div>
 
-        <div class="risk-panel">
+        <div class="risk-panel" data-info-key="data-contract">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Required backend inputs</p>
@@ -136,13 +218,29 @@
       </section>
 
       <!-- ── Price scenario chart ──────────────────────────────────────── -->
-      <section class="chart-section" aria-label="Price scenario chart">
+      <section class="filter-strip" aria-label="Score filters" data-info-key="filters">
+        <div>
+          <label for="bucketFilter">Risk bucket</label>
+          <select id="bucketFilter">
+            <option value="All">All</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        <div>
+          <label for="tickerSearch">Ticker</label>
+          <input id="tickerSearch" type="search" placeholder="Search ticker">
+        </div>
+      </section>
+
+      <section class="chart-section" aria-label="Price scenario chart" data-info-key="price-scenario">
         <div class="section-heading">
           <div>
             <p class="eyebrow">13-week scenario range</p>
             <h2 id="chartTitle">Select a ticker</h2>
           </div>
-          <p id="chartStatus" class="status-text">Price history and scenarios load after the backend demo run.</p>
+          <p id="chartStatus" class="status-text">Price history and scenarios update after a live upload.</p>
         </div>
         <div class="chart-layout">
           <div id="priceChart" class="price-chart" aria-live="polite"></div>
@@ -168,7 +266,7 @@
       </section>
 
       <!-- Stock scores table -->
-      <section class="table-section" aria-label="Stock scores">
+      <section class="table-section" aria-label="Stock scores" data-info-key="stock-table">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Scored universe</p>
@@ -193,13 +291,13 @@
       </section>
 
       <!-- Feature importance -->
-      <section class="risk-panel importance-section" aria-label="Feature importance">
+      <section class="risk-panel importance-section" aria-label="Feature importance" data-info-key="feature-importance">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Model explainability</p>
             <h2>Feature importance</h2>
           </div>
-          <p id="importanceStatus" class="status-text">Run the backend to load feature importance.</p>
+          <p id="importanceStatus" class="status-text">Demo feature importance is showing until you run a live upload.</p>
         </div>
         <p class="section-description">
           Relative contribution of each predictor to crash-risk classification.
@@ -210,7 +308,7 @@
       </section>
 
       <!-- ── Algorithm comparison ──────────────────────────────────────── -->
-      <section class="comparison-section" aria-label="Algorithm comparison">
+      <section class="comparison-section" aria-label="Algorithm comparison" data-info-key="algorithm-comparison">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Hyperparameter tuning &amp; model selection</p>
@@ -241,7 +339,7 @@
       </section>
 
       <!-- ── ESG lift comparison ───────────────────────────────────────── -->
-      <section class="comparison-section" aria-label="ESG model comparison">
+      <section class="comparison-section" aria-label="ESG model comparison" data-info-key="esg-validation">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Research validation</p>
@@ -284,7 +382,7 @@
       </section>
 
       <!-- ── Business analysis ─────────────────────────────────────────── -->
-      <section class="comparison-section" aria-label="Business analysis">
+      <section class="comparison-section" aria-label="Business analysis" data-info-key="business-analysis">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Section 4 &mdash; Economic value</p>

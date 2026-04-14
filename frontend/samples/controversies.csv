@@ -1,0 +1,7 @@
+ticker,date,sector,controversy_score
+AAPL,2024-12-06,Technology,12.5
+AAPL,2024-12-27,Technology,13.1
+MSFT,2024-12-06,Technology,8.4
+MSFT,2024-12-27,Technology,8.9
+TSLA,2024-12-06,Consumer Discretionary,26.2
+TSLA,2024-12-27,Consumer Discretionary,33.7
