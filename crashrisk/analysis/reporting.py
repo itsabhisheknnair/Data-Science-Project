@@ -843,7 +843,9 @@ def build_sql_summary(
         dataset.to_sql("model_dataset", conn, index=False, if_exists="replace")
 
         scores_enriched = scores.copy()
-        if "sector" in feature_panel:
+        # Only merge sector from panel if scores doesn't already carry it;
+        # merging when sector exists in both sides produces sector_x / sector_y.
+        if "sector" not in scores_enriched.columns and "sector" in feature_panel.columns:
             latest_sector = (
                 feature_panel.dropna(subset=["sector"])
                 .sort_values(["ticker", "date"])

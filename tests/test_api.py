@@ -1,10 +1,33 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from crashrisk.api.main import app
+
+
+def _submit_and_poll(client: TestClient, files: dict, data: dict, timeout: int = 600) -> dict:
+    """Submit a /predict job and poll /job/{job_id} until done. Returns the result payload."""
+    response = client.post("/predict", files=files, data=data)
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    job_id = body.get("job_id")
+    assert job_id, f"Expected job_id in response, got: {body}"
+    assert body["status"] == "running"
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        poll = client.get(f"/job/{job_id}")
+        assert poll.status_code == 200, poll.text
+        poll_body = poll.json()
+        if poll_body["status"] == "done":
+            return poll_body["result"]
+        time.sleep(2)
+
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
 
 
 def test_render_api_predicts_from_uploaded_raw_files(workspace_tmp_path, synthetic_raw_paths, monkeypatch):
@@ -21,13 +44,11 @@ def test_render_api_predicts_from_uploaded_raw_files(workspace_tmp_path, synthet
             open_files.append(handle)
             files[field] = (path.name, handle, "text/csv")
 
-        response = client.post("/predict", files=files, data={"tune": "false"})
+        payload = _submit_and_poll(client, files, {"tune": "false"})
     finally:
         for handle in open_files:
             handle.close()
 
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["metadata"]["score_count"] > 0
     assert {
         "scores",
@@ -74,13 +95,11 @@ def test_render_api_accepts_optional_news_text(workspace_tmp_path, synthetic_raw
         open_files.append(text_handle)
         files["news_text"] = (text_path.name, text_handle, "text/csv")
 
-        response = client.post("/predict", files=files, data={"tune": "false"})
+        payload = _submit_and_poll(client, files, {"tune": "false"})
     finally:
         for handle in open_files:
             handle.close()
 
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["textual_analysis"][0]["status"] == "ok"
     assert payload["textual_ticker_summary"][0]["status"] == "ok"
     assert payload["text_coverage"][0]["status"] == "ok"

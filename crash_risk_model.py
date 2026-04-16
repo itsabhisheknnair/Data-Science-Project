@@ -27,7 +27,11 @@ import sys
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")
+# Use Agg only when running as a plain script (not inside Jupyter/IPython).
+try:
+    get_ipython  # type: ignore[name-defined]  # noqa: F821
+except NameError:
+    matplotlib.use("Agg")
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1814,7 +1818,7 @@ def plot_all(scores, algo_df, esg_df, feat_imp, biz, panel, output_dir: Path, qu
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 13.  MAIN — FULL PIPELINE
+# 15.  MAIN — FULL PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _sep(title: str = ""):

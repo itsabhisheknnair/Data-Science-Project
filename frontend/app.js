@@ -1878,41 +1878,76 @@ async function runLiveApiScore(event) {
 
   setLiveScoreBusy(true);
   startLiveProgress();
-  apiStatus.textContent = "Scoring raw files with the Python backend...";
+  apiStatus.textContent = "Submitting files to the Python backend…";
   try {
-    const response = await fetch(apiEndpoint(), { method: "POST", body: form });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = Array.isArray(payload.detail) ? payload.detail.map(d => d.msg || d.detail || d).join("; ") : payload.detail;
-      throw new Error(detail || `API request failed with status ${response.status}.`);
+    // ── Step 1: submit job (returns immediately with job_id) ────────────────
+    const submitResp = await fetch(apiEndpoint(), { method: "POST", body: form });
+    const submitData = await submitResp.json().catch(() => ({}));
+    if (!submitResp.ok) {
+      const detail = Array.isArray(submitData.detail) ? submitData.detail.map(d => d.msg || d.detail || d).join("; ") : submitData.detail;
+      throw new Error(detail || `API request failed with status ${submitResp.status}.`);
     }
 
-    setRows(payload.scores || [], `Loaded ${payload.scores?.length || 0} scores from the hosted API.`);
-    setPriceData(payload.price_history || [], payload.price_scenarios || [], "Loaded live price history and scenarios.");
-    setComparisonRows(payload.model_comparison || [], "Loaded live ESG comparison.");
-    setAlgoRows(payload.algorithm_comparison || [], "Loaded live algorithm comparison.");
-    setImportanceRows(payload.feature_importance || [], "Loaded live feature importance.");
-    setBizRows(payload.business_analysis || [], "Loaded live business analysis.");
-    setQuarterBt(payload.quarter_backtest || {});
-    setDataSummaryRows(payload.data_summary || [], `Loaded ${payload.data_summary?.length || 0} data summary rows from API.`);
-    setCleaningLogRows(payload.cleaning_log || []);
-    setSqlSummaryRows(payload.sql_summary || []);
-    setTextualAnalysisRows(payload.textual_analysis || []);
-    setTextualTickerSummaryRows(payload.textual_ticker_summary || []);
-    setLatestArtifactRows(payload);
-    renderReportFigures();
-    renderReportDownloads();
-    const scoreCount = payload.metadata?.score_count || 0;
-    apiStatus.textContent = looksLikeDemoUniverse(payload.scores || [])
-      ? `Scored ${scoreCount} rows, but they are the demo universe. Upload the 50-ticker files from data/raw or data/raw_yfinance.`
-      : `Scored ${scoreCount} rows from raw uploaded data.`;
-    finishLiveProgress(true);
+    const jobId = submitData.job_id;
+    if (!jobId) {
+      // Legacy path: server returned the full payload synchronously (local dev)
+      _renderApiPayload(submitData);
+      return;
+    }
+
+    // ── Step 2: poll GET /job/{job_id} every 4 seconds ─────────────────────
+    const jobUrl = `${API_BASE_URL}/job/${jobId}`;
+    const startTime = Date.now();
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 4000));
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      const elapsedStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      apiStatus.textContent = `Pipeline running… (${elapsedStr} elapsed — this typically takes 3–8 minutes)`;
+
+      const pollResp = await fetch(jobUrl);
+      const pollData = await pollResp.json().catch(() => ({}));
+      if (!pollResp.ok) {
+        const detail = Array.isArray(pollData.detail) ? pollData.detail.map(d => d.msg || d.detail || d).join("; ") : pollData.detail;
+        throw new Error(detail || `Pipeline failed with status ${pollResp.status}.`);
+      }
+
+      if (pollData.status === "done") {
+        _renderApiPayload(pollData.result);
+        return;
+      }
+      // status === "running" → keep polling
+    }
   } catch (err) {
     apiStatus.textContent = `API scoring failed: ${err.message}`;
     finishLiveProgress(false);
   } finally {
     setLiveScoreBusy(false);
   }
+}
+
+function _renderApiPayload(payload) {
+  setRows(payload.scores || [], `Loaded ${payload.scores?.length || 0} scores from the hosted API.`);
+  setPriceData(payload.price_history || [], payload.price_scenarios || [], "Loaded live price history and scenarios.");
+  setComparisonRows(payload.model_comparison || [], "Loaded live ESG comparison.");
+  setAlgoRows(payload.algorithm_comparison || [], "Loaded live algorithm comparison.");
+  setImportanceRows(payload.feature_importance || [], "Loaded live feature importance.");
+  setBizRows(payload.business_analysis || [], "Loaded live business analysis.");
+  setQuarterBt(payload.quarter_backtest || {});
+  setDataSummaryRows(payload.data_summary || [], `Loaded ${payload.data_summary?.length || 0} data summary rows from API.`);
+  setCleaningLogRows(payload.cleaning_log || []);
+  setSqlSummaryRows(payload.sql_summary || []);
+  setTextualAnalysisRows(payload.textual_analysis || []);
+  setTextualTickerSummaryRows(payload.textual_ticker_summary || []);
+  setLatestArtifactRows(payload);
+  renderReportFigures();
+  renderReportDownloads();
+  const scoreCount = payload.metadata?.score_count || 0;
+  apiStatus.textContent = looksLikeDemoUniverse(payload.scores || [])
+    ? `Scored ${scoreCount} rows, but they are the demo universe. Upload the 50-ticker files from data/raw or data/raw_yfinance.`
+    : `Scored ${scoreCount} rows from raw uploaded data.`;
+  finishLiveProgress(true);
 }
 
 function loadUploadedFile(file) {
