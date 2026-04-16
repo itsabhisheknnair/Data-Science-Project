@@ -10,13 +10,23 @@ def main() -> None:
     parser.add_argument("--raw-dir", default="data/raw", help="Directory containing raw CSV/XLSX exports.")
     parser.add_argument("--processed-dir", default="data/processed", help="Directory for parquet outputs.")
     parser.add_argument("--outputs-dir", default="outputs", help="Directory for scoring outputs.")
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        default=False,
+        help="Run GridSearchCV hyperparameter tuning and write best-parameter results.",
+    )
     args = parser.parse_args()
 
-    result = run_mvp(raw_dir=args.raw_dir, processed_dir=args.processed_dir, outputs_dir=args.outputs_dir)
+    result = run_mvp(
+        raw_dir=args.raw_dir,
+        processed_dir=args.processed_dir,
+        outputs_dir=args.outputs_dir,
+        tune=args.tune,
+    )
     scores = result["scores"]
     print(f"Wrote {len(scores)} scores to {args.outputs_dir}/stock_scores.csv")
 
 
 if __name__ == "__main__":
     main()
-

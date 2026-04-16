@@ -98,6 +98,45 @@ const DEMO_TEXTUAL_ANALYSIS = [
   { status: "no_text_file", note: "Rubric evidence appears after a backend run. Supply controversy_text.csv or news_text.csv to enable direct headline analysis." },
 ];
 
+const DEMO_TEXTUAL_TICKER_SUMMARY = [
+  { status: "ok", ticker: "CYRX", latest_text_date: "2024-12-27", article_count: "7", negative_esg_controversy_score_0_100: "81.6", text_sentiment_score: "-0.1429", negative_word_count: "16", positive_word_count: "2", controversy_keyword_count: "11", score_band: "High" },
+  { status: "ok", ticker: "FINX", latest_text_date: "2024-12-27", article_count: "5", negative_esg_controversy_score_0_100: "68.4", text_sentiment_score: "-0.1180", negative_word_count: "11", positive_word_count: "1", controversy_keyword_count: "8", score_band: "High" },
+  { status: "ok", ticker: "HVST", latest_text_date: "2024-12-27", article_count: "4", negative_esg_controversy_score_0_100: "52.1", text_sentiment_score: "-0.0710", negative_word_count: "7", positive_word_count: "1", controversy_keyword_count: "5", score_band: "Medium" },
+];
+
+const DEMO_QUARTER_BT = {
+  cutoff_date: "2024-06-28",
+  quarter_label: "Q3 2024",
+  forward_weeks: 12,
+  strategy_quarter_return: 0.0489,
+  benchmark_quarter_return: 0.0263,
+  outperformance_bps: 226,
+  dollar_impact_quarter: 2260000,
+  dollar_impact_annualised: 9040000,
+  n_excluded: 3,
+  n_held: 9,
+  pct_excluded_correct: 0.67,
+  excluded_tickers: [
+    { ticker: "CYRX", crash_probability: 0.8412, quarter_return: -0.3182, outcome: "Avoided loss" },
+    { ticker: "FINX", crash_probability: 0.7634, quarter_return: -0.1547, outcome: "Avoided loss" },
+    { ticker: "HVST", crash_probability: 0.6821, quarter_return:  0.0831, outcome: "Model missed" },
+  ],
+  weekly_series: [
+    { date: "2024-07-05", strategy_cumulative: 1.0041, benchmark_cumulative: 1.0018 },
+    { date: "2024-07-12", strategy_cumulative: 1.0097, benchmark_cumulative: 1.0052 },
+    { date: "2024-07-19", strategy_cumulative: 1.0154, benchmark_cumulative: 1.0089 },
+    { date: "2024-07-26", strategy_cumulative: 1.0198, benchmark_cumulative: 1.0107 },
+    { date: "2024-08-02", strategy_cumulative: 1.0241, benchmark_cumulative: 1.0134 },
+    { date: "2024-08-09", strategy_cumulative: 1.0287, benchmark_cumulative: 1.0158 },
+    { date: "2024-08-16", strategy_cumulative: 1.0321, benchmark_cumulative: 1.0172 },
+    { date: "2024-08-23", strategy_cumulative: 1.0369, benchmark_cumulative: 1.0192 },
+    { date: "2024-08-30", strategy_cumulative: 1.0412, benchmark_cumulative: 1.0213 },
+    { date: "2024-09-06", strategy_cumulative: 1.0451, benchmark_cumulative: 1.0234 },
+    { date: "2024-09-13", strategy_cumulative: 1.0479, benchmark_cumulative: 1.0249 },
+    { date: "2024-09-20", strategy_cumulative: 1.0489, benchmark_cumulative: 1.0263 },
+  ],
+};
+
 const DEMO_TICKERS = new Set(DEMO_ROWS.map(row => row.ticker));
 
 /* ── App state ─────────────────────────────────────────────────────────── */
@@ -112,6 +151,16 @@ let dataSummaryRows     = [];
 let cleaningLogRows     = [];
 let sqlSummaryRows      = [];
 let textualAnalysisRows = [];
+let textualTickerSummaryRows = [];
+let textModelRows       = [];
+let tuningRows          = [];
+let confusionRows       = [];
+let calibrationRows     = [];
+let featureStatsRows    = [];
+let textCoverageRows    = [];
+let ldaTopicRows        = [];
+let ldaTickerTopicRows  = [];
+let quarterBt           = null;
 let selectedTicker      = "";
 let liveProgressTimer   = null;
 let liveProgressPercent = 0;
@@ -131,10 +180,14 @@ const rawPrices         = document.querySelector("#rawPrices");
 const rawBenchmark      = document.querySelector("#rawBenchmark");
 const rawFundamentals   = document.querySelector("#rawFundamentals");
 const rawControversies  = document.querySelector("#rawControversies");
+const rawNewsText       = document.querySelector("#rawNewsText");
+const rawControversyText = document.querySelector("#rawControversyText");
 const rawPricesStatus   = document.querySelector("#rawPricesStatus");
 const rawBenchmarkStatus = document.querySelector("#rawBenchmarkStatus");
 const rawFundamentalsStatus = document.querySelector("#rawFundamentalsStatus");
 const rawControversiesStatus = document.querySelector("#rawControversiesStatus");
+const rawNewsTextStatus = document.querySelector("#rawNewsTextStatus");
+const rawControversyTextStatus = document.querySelector("#rawControversyTextStatus");
 const apiTune           = document.querySelector("#apiTune");
 const apiStatus         = document.querySelector("#apiStatus");
 const runLiveScoreButton = document.querySelector("#runLiveScoreButton");
@@ -166,6 +219,12 @@ const bizStatus         = document.querySelector("#bizStatus");
 const bizSummary        = document.querySelector("#bizSummary");
 const bizHighlights     = document.querySelector("#bizHighlights");
 const bizRowsBody       = document.querySelector("#bizRows");
+const quarterBtSection  = document.querySelector("#quarterBacktestSection");
+const quarterBtStatus   = document.querySelector("#quarterBtStatus");
+const quarterBtHero     = document.querySelector("#quarterBtHero");
+const quarterReturnChartEl   = document.querySelector("#quarterReturnChart");
+const quarterExcludedBarChartEl = document.querySelector("#quarterExcludedBarChart");
+const quarterExcludedTable   = document.querySelector("#quarterExcludedTable tbody");
 const metricTotal       = document.querySelector("#metricTotal");
 const metricHigh        = document.querySelector("#metricHigh");
 const metricAverage     = document.querySelector("#metricAverage");
@@ -180,13 +239,37 @@ const dataSummaryContent     = document.querySelector("#dataSummaryContent");
 const cleaningLogContent     = document.querySelector("#cleaningLogContent");
 const sqlEvidenceContent     = document.querySelector("#sqlEvidenceContent");
 const textualAnalysisContent = document.querySelector("#textualAnalysisContent");
+const modelDiagnosticsStatus = document.querySelector("#modelDiagnosticsStatus");
+const tuningRowsBody         = document.querySelector("#tuningRows");
+const textModelRowsBody      = document.querySelector("#textModelRows");
+const confusionRowsBody      = document.querySelector("#confusionRows");
+const calibrationRowsBody    = document.querySelector("#calibrationRows");
+const tuningBadge            = document.querySelector("#tuningBadge");
+const textModelBadge         = document.querySelector("#textModelBadge");
+const confusionBadge         = document.querySelector("#confusionBadge");
+const calibrationBadge       = document.querySelector("#calibrationBadge");
+const textAnalyticsStatus    = document.querySelector("#textAnalyticsStatus");
+const textAnalyticsSummary   = document.querySelector("#textAnalyticsSummary");
+const textAnalyticsBadge     = document.querySelector("#textAnalyticsBadge");
+const textTickerSummaryContent = document.querySelector("#textTickerSummaryContent");
+const textWordCloudContent   = document.querySelector("#textWordCloudContent");
+const textWordCloudStatus    = document.querySelector("#textWordCloudStatus");
 const dataSummaryBadge       = document.querySelector("#dataSummaryBadge");
 const cleaningLogBadge       = document.querySelector("#cleaningLogBadge");
 const sqlEvidenceBadge       = document.querySelector("#sqlEvidenceBadge");
 const textualAnalysisBadge   = document.querySelector("#textualAnalysisBadge");
+const featureStatsContent    = document.querySelector("#featureStatsContent");
+const featureStatsBadge      = document.querySelector("#featureStatsBadge");
+const textCoverageContent    = document.querySelector("#textCoverageContent");
+const textCoverageBadge      = document.querySelector("#textCoverageBadge");
 const reportFigures          = document.querySelector("#reportFigures");
 const reportDownloads        = document.querySelector("#reportDownloads");
-const API_BASE_URL           = "https://crashrisk-api.onrender.com";
+const DEFAULT_API_BASE_URL   = "https://crashrisk-api.onrender.com";
+const isLocalStaticHost      = ["", "localhost", "127.0.0.1"].includes(window.location.hostname);
+const API_BASE_URL           = (
+  window.CRASHRISK_API_BASE_URL ||
+  (window.location.protocol.startsWith("http") && !isLocalStaticHost ? "/api" : DEFAULT_API_BASE_URL)
+).replace(/\/$/, "");
 
 const SECTION_INFO = {
   "live-scoring": {
@@ -197,7 +280,8 @@ const SECTION_INFO = {
       "benchmark_prices gives the market reference series, such as S&P 500 or SPY. It is used for firm-specific residual returns and downside beta.",
       "fundamentals gives market cap, shares outstanding, leverage, market-to-book, and ROA. These controls help separate ESG controversy risk from ordinary firm characteristics.",
       "controversies is the ESG controversy signal. The model uses the score level, changes, spikes, rolling behavior, and sector-relative position.",
-      "The API URL is fixed in code, so the user does not need to type the Render backend link."
+      "Optional news_text and controversy_text files power the separate ESG news monitor and do not change the crash-risk model score in this version.",
+      "On Netlify, the dashboard calls /api/predict and Netlify proxies the request to the hosted FastAPI backend."
     ],
     note: "Use this section for fresh predictions from raw data."
   },
@@ -300,6 +384,17 @@ const SECTION_INFO = {
     ],
     note: "This section supports model selection, not individual stock decisions."
   },
+  "model-diagnostics": {
+    title: "Model diagnostics",
+    lead: "This mirrors the latest backend outputs for model tuning, textual-signal testing, confusion-matrix behavior, and probability calibration.",
+    points: [
+      "Hyperparameter tuning reports the grid searched and the best TimeSeriesSplit CV result for each model family.",
+      "Text signal comparison checks whether the text-derived ESG sentiment features change validation or test metrics.",
+      "The confusion matrix gives TP, FP, TN, and FN counts under both a 0.50 probability threshold and the top-bucket decision rule.",
+      "The calibration curve compares predicted probabilities against observed crash rates, which is important when probabilities are used in business overlays."
+    ],
+    note: "Use these tables when writing the machine-learning evaluation section."
+  },
   "esg-validation": {
     title: "ESG controversy validation",
     lead: "This is the key research question: does ESG controversy data improve crash-risk prediction beyond a traditional non-ESG benchmark?",
@@ -322,6 +417,16 @@ const SECTION_INFO = {
     ],
     note: "Treat this as a product-demo overlay until tested on real Bloomberg history."
   },
+  "text-analytics": {
+    title: "Text analytics",
+    lead: "This section is separate from the crash-risk model. It scores ESG-negative news coverage from optional uploaded text files and ranks tickers by current controversy pressure.",
+    points: [
+      "The input can be a Bloomberg-style export or another CSV/XLSX file as long as it includes ticker, date, and some headline, body, text, or summary column.",
+      "The 0 to 100 score blends negative sentiment intensity, ESG controversy keyword density, and article volume into one interpretable severity measure.",
+      "The word cloud emphasizes controversy-heavy negative language, while the table ranks the latest score by ticker."
+    ],
+    note: "Use this when you want to explain why a name is attracting negative ESG news flow."
+  },
   "fds-evidence": {
     title: "FDS Project Evidence",
     lead: "This section maps the dashboard to the FIN42110 marking rubric. It provides documented proof for the data, SQL, textual analysis, and ML components of the submission.",
@@ -330,6 +435,8 @@ const SECTION_INFO = {
       "Cleaning Log records missing values, duplicate rows, invalid price checks, rows removed, the fundamentals availability lag, weekly Friday date alignment, and the target window definition.",
       "SQL Evidence shows five runnable queries with compact result tables: ticker observation counts, sector controversy averages, top controversy events, target class balance, and high-risk names by sector.",
       "Textual Analysis shows sentiment score, negative/positive keyword counts, and controversy keyword counts per ticker-week if a news_text or controversy_text file is supplied. Otherwise it explains the limitation clearly.",
+      "Feature Descriptive Statistics lists count, mean, standard deviation, min, max, and null percentage for every configured model feature.",
+      "Text Coverage and LDA shows article coverage by split plus topic words and ticker-level dominant topics.",
       "Report Figures shows SVG charts produced by a local backend run and can be copied into the written report.",
       "Download Report Artifacts provides links to the report outline, SQL summary, project report draft, and viva slides outline generated by the backend."
     ],
@@ -426,6 +533,22 @@ function normalizeImportance(row) {
 }
 function normalizeBiz(row) {
   return { metric: String(row.metric || "").trim(), value: String(row.value || "").trim() };
+}
+function normalizeTextualSummary(row) {
+  return {
+    status: String(row.status || "").trim(),
+    ticker: String(row.ticker || "").trim().toUpperCase(),
+    latest_text_date: String(row.latest_text_date || row.date || "").trim(),
+    article_count: numberOrZero(row.article_count),
+    negative_esg_controversy_score_0_100: numberOrNull(row.negative_esg_controversy_score_0_100),
+    text_sentiment_score: numberOrNull(row.text_sentiment_score),
+    negative_word_count: numberOrZero(row.negative_word_count),
+    positive_word_count: numberOrZero(row.positive_word_count),
+    controversy_keyword_count: numberOrZero(row.controversy_keyword_count),
+    score_band: String(row.score_band || "").trim(),
+    note: String(row.note || "").trim(),
+    source_file: String(row.source_file || "").trim(),
+  };
 }
 
 /* ── Formatters ────────────────────────────────────────────────────────── */
@@ -700,6 +823,82 @@ function renderAlgoComparison() {
 }
 
 /* ── ESG lift comparison ───────────────────────────────────────────────── */
+function formatNumberCell(value, digits = 3) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : escapeHtml(value ?? "-");
+}
+
+function compactParams(value) {
+  if (!value) return "-";
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Object.entries(parsed)
+      .map(([key, val]) => `${key.replace("classifier__", "")}: ${Array.isArray(val) ? val.join("/") : val}`)
+      .join("; ") || "-";
+  } catch {
+    return String(value);
+  }
+}
+
+function renderModelDiagnostics() {
+  const totalRows = textModelRows.length + tuningRows.length + confusionRows.length + calibrationRows.length;
+  if (modelDiagnosticsStatus) {
+    modelDiagnosticsStatus.textContent = totalRows
+      ? `Loaded ${totalRows} diagnostic rows from the latest backend artifacts.`
+      : "No latest diagnostics loaded yet.";
+  }
+
+  if (tuningBadge) tuningBadge.textContent = tuningRows.length ? `${tuningRows.length} models` : "";
+  if (tuningRowsBody) {
+    tuningRowsBody.innerHTML = tuningRows.length ? tuningRows.map(row => `
+      <tr>
+        <td>${escapeHtml(String(row.model || ""))}</td>
+        <td class="muted-cell">${escapeHtml(compactParams(row.best_params))}</td>
+        <td class="metric-value">${formatNumberCell(row.best_cv_roc_auc)}</td>
+        <td class="metric-value">${formatNumberCell(row.cv_roc_auc_std)}</td>
+        <td class="metric-value">${escapeHtml(String(row.n_candidates ?? ""))}</td>
+      </tr>`).join("") : '<tr><td colspan="5" class="empty-state">No tuning results loaded.</td></tr>';
+  }
+
+  if (textModelBadge) textModelBadge.textContent = textModelRows.length ? `${textModelRows.length} rows` : "";
+  if (textModelRowsBody) {
+    textModelRowsBody.innerHTML = textModelRows.length ? textModelRows.map(row => `
+      <tr>
+        <td>${escapeHtml(String(row.model || "").replaceAll("_", " "))}</td>
+        <td><span class="split-pill">${escapeHtml(String(row.split || ""))}</span></td>
+        <td class="metric-value">${escapeHtml(String(row.text_covered_rows ?? ""))}</td>
+        <td class="metric-value">${formatNumberCell(row.roc_auc)}</td>
+        <td class="metric-value">${formatNumberCell(row.precision_at_top_bucket)}</td>
+        <td class="metric-value">${formatNumberCell(row.crash_capture_at_top_bucket)}</td>
+      </tr>`).join("") : '<tr><td colspan="6" class="empty-state">No text model comparison loaded.</td></tr>';
+  }
+
+  if (confusionBadge) confusionBadge.textContent = confusionRows.length ? `${confusionRows.length} thresholds` : "";
+  if (confusionRowsBody) {
+    confusionRowsBody.innerHTML = confusionRows.length ? confusionRows.map(row => `
+      <tr>
+        <td>${escapeHtml(String(row.threshold || ""))}</td>
+        <td class="metric-value">${escapeHtml(String(row.tp ?? ""))}</td>
+        <td class="metric-value">${escapeHtml(String(row.fp ?? ""))}</td>
+        <td class="metric-value">${escapeHtml(String(row.tn ?? ""))}</td>
+        <td class="metric-value">${escapeHtml(String(row.fn ?? ""))}</td>
+        <td class="metric-value">${formatNumberCell(row.precision)}</td>
+        <td class="metric-value">${formatNumberCell(row.recall)}</td>
+      </tr>`).join("") : '<tr><td colspan="7" class="empty-state">No confusion matrix loaded.</td></tr>';
+  }
+
+  if (calibrationBadge) calibrationBadge.textContent = calibrationRows.length ? `${calibrationRows.length} bins` : "";
+  if (calibrationRowsBody) {
+    calibrationRowsBody.innerHTML = calibrationRows.length ? calibrationRows.map(row => `
+      <tr>
+        <td>${escapeHtml(String(row.bin || ""))}</td>
+        <td class="metric-value">${escapeHtml(String(row.n_rows ?? ""))}</td>
+        <td class="metric-value">${formatNumberCell(row.mean_predicted_probability)}</td>
+        <td class="metric-value">${formatNumberCell(row.observed_crash_rate)}</td>
+      </tr>`).join("") : '<tr><td colspan="4" class="empty-state">No calibration curve loaded.</td></tr>';
+  }
+}
+
 function renderComparison() {
   if (!comparisonRows.length) {
     comparisonSummary.innerHTML = '<div class="empty-state">No ESG comparison loaded.</div>';
@@ -768,23 +967,29 @@ const BIZ_LABELS = {
   strategy_annual_return:  "Strategy annual return",
   benchmark_annual_return: "Benchmark annual return",
   alpha_annualized:        "Alpha (annualised)",
+  benchmark_alpha_annualized: "Benchmark alpha",
   strategy_sharpe:         "Strategy Sharpe ratio",
   benchmark_sharpe:        "Benchmark Sharpe ratio",
   strategy_sortino:        "Strategy Sortino ratio",
-  max_drawdown_strategy:   "Max drawdown — strategy",
-  max_drawdown_benchmark:  "Max drawdown — benchmark",
+  benchmark_sortino:       "Benchmark Sortino ratio",
+  max_drawdown_strategy:   "Max drawdown - strategy",
+  max_drawdown_benchmark:  "Max drawdown - benchmark",
   drawdown_improvement:    "Drawdown improvement",
   var_95_weekly:           "Weekly VaR (95%)",
+  benchmark_var_95_weekly: "Benchmark weekly VaR (95%)",
   cvar_95_weekly:          "Weekly CVaR (95%)",
+  benchmark_cvar_95_weekly:"Benchmark weekly CVaR (95%)",
   evaluation_weeks:        "Evaluation weeks",
   high_risk_excluded_pct:  "High-risk excluded %",
+  benchmark_high_risk_excluded_pct: "Benchmark high-risk excluded %",
   fund_aum:                "Fund AUM ($)",
   economic_gain_annual:    "Annual economic gain ($)",
+  benchmark_economic_gain_annual: "Benchmark economic gain ($)",
   team_annual_cost:        "Team annual cost ($)",
-  team_roi:                "Team ROI (×)",
+  team_roi:                "Team ROI (x)",
+  benchmark_team_roi:      "Benchmark Team ROI",
   justifies_team:          "Justifies team hire?",
 };
-
 const BIZ_SUMMARY_KEYS = ["alpha_annualized", "strategy_sharpe", "economic_gain_annual"];
 const BIZ_TABLE_EXCLUDED = new Set(["business_analysis_note"]);
 
@@ -794,18 +999,24 @@ function formatBizMetric(metric, raw) {
     "strategy_annual_return",
     "benchmark_annual_return",
     "alpha_annualized",
+    "benchmark_alpha_annualized",
     "high_risk_excluded_pct",
+    "benchmark_high_risk_excluded_pct",
     "max_drawdown_strategy",
     "max_drawdown_benchmark",
     "drawdown_improvement",
     "var_95_weekly",
+    "benchmark_var_95_weekly",
     "cvar_95_weekly",
+    "benchmark_cvar_95_weekly",
   ].includes(metric))
     return Number.isFinite(v) ? `${(v * 100).toFixed(2)}%` : raw;
-  if (["fund_aum","economic_gain_annual","team_annual_cost"].includes(metric))
+  if (["fund_aum","economic_gain_annual","benchmark_economic_gain_annual","team_annual_cost"].includes(metric))
     return Number.isFinite(v) ? `$${v.toLocaleString()}` : raw;
   if (metric === "team_roi" && Number.isFinite(v))
     return `${v.toFixed(2)}x`;
+  if (metric === "benchmark_team_roi" && (raw === "None" || raw === "" || raw == null))
+    return "-";
   return raw;
 }
 
@@ -881,12 +1092,14 @@ function renderBizAnalysis() {
     const label = BIZ_LABELS[r.metric] || r.metric;
     let display = formatBizMetric(r.metric, r.value);
     const v = parseFloat(r.value);
-    if (["strategy_annual_return","benchmark_annual_return","alpha_annualized","high_risk_excluded_pct"].includes(r.metric))
+    if (["strategy_annual_return","benchmark_annual_return","alpha_annualized","benchmark_alpha_annualized","high_risk_excluded_pct","benchmark_high_risk_excluded_pct"].includes(r.metric))
       display = Number.isFinite(v) ? `${(v*100).toFixed(2)}%` : r.value;
-    else if (["fund_aum","economic_gain_annual","team_annual_cost"].includes(r.metric))
+    else if (["fund_aum","economic_gain_annual","benchmark_economic_gain_annual","team_annual_cost"].includes(r.metric))
       display = Number.isFinite(v) ? `$${v.toLocaleString()}` : r.value;
     else if (r.metric === "team_roi" && Number.isFinite(v))
       display = `${v.toFixed(2)}x`;
+    else if (r.metric === "benchmark_team_roi")
+      display = "-";
     return `<tr><td>${escapeHtml(label)}</td><td style="font-variant-numeric:tabular-nums">${escapeHtml(display)}</td></tr>`;
   }).join("");
 }
@@ -900,14 +1113,134 @@ const REPORT_FIGURES = [
   { name: "ESG lift",                  paths: ["outputs/figures/esg_lift.svg",                    "../outputs/figures/esg_lift.svg"] },
   { name: "Price scenario range",      paths: ["outputs/figures/price_scenario_range.svg",        "../outputs/figures/price_scenario_range.svg"] },
   { name: "Text word cloud",           paths: ["outputs/figures/text_word_cloud.svg",             "../outputs/figures/text_word_cloud.svg"] },
+  { name: "Feature correlation heatmap", paths: ["outputs/figures/feature_correlation_heatmap.png", "../outputs/figures/feature_correlation_heatmap.png"] },
+  { name: "Representative price time series", paths: ["outputs/figures/price_time_series.png", "../outputs/figures/price_time_series.png"] },
+  { name: "Probability calibration", paths: ["outputs/figures/probability_calibration.png", "../outputs/figures/probability_calibration.png"] },
+  { name: "LDA topic distribution", paths: ["outputs/figures/lda_topic_distribution.png", "../outputs/figures/lda_topic_distribution.png"] },
 ];
+const TEXT_WORD_CLOUD_PATHS = ["outputs/figures/text_word_cloud.svg", "../outputs/figures/text_word_cloud.svg"];
 
 const REPORT_ARTIFACTS = [
   { name: "FDS report outline",   paths: ["outputs/fds_report_outline.md",        "../outputs/fds_report_outline.md"],        filename: "fds_report_outline.md" },
   { name: "SQL summary",          paths: ["outputs/sql_summary.md",               "../outputs/sql_summary.md"],               filename: "sql_summary.md" },
+  { name: "Feature descriptive stats", paths: ["outputs/feature_descriptive_stats.csv", "../outputs/feature_descriptive_stats.csv"], filename: "feature_descriptive_stats.csv" },
+  { name: "Text model comparison", paths: ["outputs/text_model_comparison.csv", "../outputs/text_model_comparison.csv"], filename: "text_model_comparison.csv" },
+  { name: "Hyperparameter tuning", paths: ["outputs/hyperparameter_tuning_results.csv", "../outputs/hyperparameter_tuning_results.csv"], filename: "hyperparameter_tuning_results.csv" },
+  { name: "Confusion matrix", paths: ["outputs/confusion_matrix.csv", "../outputs/confusion_matrix.csv"], filename: "confusion_matrix.csv" },
+  { name: "Calibration curve", paths: ["outputs/calibration_curve.csv", "../outputs/calibration_curve.csv"], filename: "calibration_curve.csv" },
+  { name: "Text coverage", paths: ["outputs/text_coverage.csv", "../outputs/text_coverage.csv"], filename: "text_coverage.csv" },
+  { name: "LDA topic words", paths: ["outputs/lda_topic_words.csv", "../outputs/lda_topic_words.csv"], filename: "lda_topic_words.csv" },
   { name: "Project report draft", paths: ["reports/fds_project_report_draft.md",  "../reports/fds_project_report_draft.md"],  filename: "fds_project_report_draft.md" },
   { name: "Viva slides outline",  paths: ["reports/fds_viva_slides_outline.md",   "../reports/fds_viva_slides_outline.md"],   filename: "fds_viva_slides_outline.md" },
 ];
+
+/* ── Quarter snapshot backtest ─────────────────────────────────────────── */
+
+function setQuarterBt(data) {
+  quarterBt = (data && !data.error && data.weekly_series) ? data : null;
+  renderQuarterBacktest();
+}
+
+function buildQbCumReturnSvg(weeklySeries) {
+  const W = 520, H = 220, padL = 48, padR = 16, padT = 14, padB = 36;
+  const iW = W - padL - padR, iH = H - padT - padB;
+  const n = weeklySeries.length;
+  if (n < 2) return "";
+  const sCum = weeklySeries.map(d => d.strategy_cumulative);
+  const bCum = weeklySeries.map(d => d.benchmark_cumulative);
+  const allVals = [...sCum, ...bCum];
+  const yMin = Math.min(...allVals) - 0.002;
+  const yMax = Math.max(...allVals) + 0.002;
+  const xOf = i => padL + (i / (n - 1)) * iW;
+  const yOf = v => padT + iH - ((v - yMin) / (yMax - yMin)) * iH;
+  const pts = arr => arr.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(" ");
+  const fmt = v => `${((v - 1) * 100).toFixed(1)}%`;
+  const finalS = sCum[n - 1], finalB = bCum[n - 1];
+  const tickDates = [0, Math.floor(n / 2), n - 1].map(i => weeklySeries[i].date.slice(0, 10));
+  const tickX    = [0, Math.floor(n / 2), n - 1].map(xOf);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:220px;display:block">
+    <polyline points="${pts(sCum)}" fill="none" stroke="#0d6b62" stroke-width="2.2"/>
+    <polyline points="${pts(bCum)}" fill="none" stroke="#7f8c8d" stroke-width="1.8" stroke-dasharray="5,3"/>
+    <text x="${xOf(n-1)+4}" y="${yOf(finalS)+4}" fill="#0d6b62" font-size="11" font-weight="bold">${fmt(finalS)}</text>
+    <text x="${xOf(n-1)+4}" y="${yOf(finalB)+4}" fill="#7f8c8d" font-size="11">${fmt(finalB)}</text>
+    ${tickDates.map((d, i) => `<text x="${tickX[i]}" y="${H - 4}" text-anchor="middle" fill="#555" font-size="10">${d}</text>`).join("")}
+    <text x="${padL - 4}" y="${yOf(yMin + (yMax - yMin) * 0.5)}" text-anchor="end" fill="#555" font-size="10" transform="rotate(-90,${padL-4},${yOf(yMin+(yMax-yMin)*0.5)})">Cumul. Return</text>
+    <circle cx="${W-120}" cy="${padT+8}" r="5" fill="#0d6b62"/>
+    <text x="${W-112}" y="${padT+12}" fill="#0d6b62" font-size="10">Strategy</text>
+    <line x1="${W-55}" y1="${padT+8}" x2="${W-40}" y2="${padT+8}" stroke="#7f8c8d" stroke-width="1.8" stroke-dasharray="4,2"/>
+    <text x="${W-37}" y="${padT+12}" fill="#7f8c8d" font-size="10">Benchmark</text>
+  </svg>`;
+}
+
+function buildQbExcludedBarSvg(excludedTickers) {
+  const items = excludedTickers.filter(t => t.quarter_return != null);
+  if (!items.length) return "";
+  const sorted = [...items].sort((a, b) => a.quarter_return - b.quarter_return);
+  const W = 400, barH = 22, gap = 4, padL = 48, padR = 60, padT = 10, padB = 10;
+  const H = padT + sorted.length * (barH + gap) + padB;
+  const vals = sorted.map(t => t.quarter_return);
+  const absMax = Math.max(...vals.map(Math.abs), 0.01);
+  const midX = padL + (W - padL - padR) / 2;
+  const xScale = v => midX + (v / absMax) * (midX - padL - 4);
+  const rows = sorted.map((t, i) => {
+    const y = padT + i * (barH + gap);
+    const x0 = Math.min(midX, xScale(t.quarter_return));
+    const bW = Math.abs(xScale(t.quarter_return) - midX);
+    const col = t.quarter_return < 0 ? "#1a7a4a" : "#c0392b";
+    const pct = `${(t.quarter_return * 100).toFixed(1)}%`;
+    return `<text x="${padL - 4}" y="${y + barH * 0.68}" text-anchor="end" font-size="10" fill="#333">${escapeHtml(t.ticker)}</text>
+      <rect x="${x0}" y="${y+2}" width="${Math.max(bW,1)}" height="${barH-4}" fill="${col}" rx="2"/>
+      <text x="${xScale(t.quarter_return) + (t.quarter_return >= 0 ? 3 : -3)}" y="${y + barH * 0.68}" text-anchor="${t.quarter_return >= 0 ? 'start' : 'end'}" font-size="9" fill="${col}" font-weight="bold">${pct}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:${H}px;display:block">
+    <line x1="${midX}" y1="${padT}" x2="${midX}" y2="${H-padB}" stroke="#ccc" stroke-width="1"/>
+    ${rows.join("")}
+    <text x="${W/2}" y="${H-1}" text-anchor="middle" fill="#555" font-size="10">Q4 Return (%)</text>
+  </svg>`;
+}
+
+function renderQuarterBacktest() {
+  if (!quarterBtSection) return;
+  if (!quarterBt) {
+    quarterBtSection.style.display = "none";
+    return;
+  }
+  quarterBtSection.style.display = "";
+  const q = quarterBt;
+  const alphaBps  = Number.isFinite(q.outperformance_bps) ? q.outperformance_bps : "—";
+  const dollarImp = q.dollar_impact_quarter != null
+    ? `$${(q.dollar_impact_quarter / 1e6).toFixed(1)}M`
+    : "—";
+  const pctCorr = q.pct_excluded_correct != null
+    ? `${Math.round(q.pct_excluded_correct * 100)}%`
+    : "—";
+
+  if (quarterBtStatus)
+    quarterBtStatus.textContent = `${q.quarter_label} · cutoff ${q.cutoff_date} · ${q.n_excluded} stocks excluded`;
+
+  if (quarterBtHero) {
+    const sign = alphaBps >= 0 ? "+" : "";
+    quarterBtHero.innerHTML = [
+      { label: "Alpha vs Benchmark", val: `${sign}${alphaBps} bps`, cls: alphaBps >= 0 ? "positive" : "negative" },
+      { label: `Dollar Impact ($1B Fund, ${q.quarter_label})`, val: dollarImp, cls: "positive" },
+      { label: `Flagged Stocks That Fell in ${q.quarter_label}`, val: pctCorr, cls: "" },
+    ].map(c => `<article class="biz-card ${c.cls}"><span>${escapeHtml(c.label)}</span><strong>${escapeHtml(c.val)}</strong></article>`).join("");
+  }
+
+  if (quarterReturnChartEl)
+    quarterReturnChartEl.innerHTML = buildQbCumReturnSvg(q.weekly_series || []);
+  if (quarterExcludedBarChartEl)
+    quarterExcludedBarChartEl.innerHTML = buildQbExcludedBarSvg(q.excluded_tickers || []);
+
+  if (quarterExcludedTable) {
+    quarterExcludedTable.innerHTML = (q.excluded_tickers || []).map(t => {
+      const ret = t.quarter_return != null ? `${(t.quarter_return * 100).toFixed(1)}%` : "N/A";
+      const retNum = t.quarter_return != null ? t.quarter_return : 0;
+      const rowCls = t.outcome === "Avoided loss" ? "style=\"background:#efffef\"" : t.outcome === "Model missed" ? "style=\"background:#fff0f0\"" : "";
+      return `<tr ${rowCls}><td>${escapeHtml(t.ticker)}</td><td>${(t.crash_probability * 100).toFixed(1)}%</td><td style="color:${retNum < 0 ? '#1a7a4a' : '#c0392b'};font-weight:600">${ret}</td><td>${escapeHtml(t.outcome || "—")}</td></tr>`;
+    }).join("");
+  }
+}
 
 function renderEvidenceHeadline() {
   if (!evidenceHeadline) return;
@@ -1072,6 +1405,170 @@ function renderTextualAnalysis() {
     ${textualAnalysisRows.length > 20 ? `<p class="status-text">Showing 20 of ${textualAnalysisRows.length} rows.</p>` : ""}`;
 }
 
+function renderFeatureStats() {
+  if (!featureStatsContent) return;
+  if (featureStatsBadge) featureStatsBadge.textContent = featureStatsRows.length ? `${featureStatsRows.length} features` : "";
+  if (!featureStatsRows.length) {
+    featureStatsContent.innerHTML = '<div class="empty-state">No feature descriptive statistics loaded.</div>';
+    return;
+  }
+  featureStatsContent.innerHTML = `<div class="table-shell"><table class="evidence-table">
+    <thead><tr><th>Feature</th><th>Group</th><th>Count</th><th>Mean</th><th>Std</th><th>Min</th><th>Max</th><th>Null %</th></tr></thead>
+    <tbody>${featureStatsRows.map(row => `
+      <tr>
+        <td>${escapeHtml(row.feature || "")}</td>
+        <td>${escapeHtml(row.feature_group || "")}</td>
+        <td class="metric-value">${escapeHtml(String(row.count ?? ""))}</td>
+        <td class="metric-value">${formatNumberCell(row.mean, 4)}</td>
+        <td class="metric-value">${formatNumberCell(row.std, 4)}</td>
+        <td class="metric-value">${formatNumberCell(row.min, 4)}</td>
+        <td class="metric-value">${formatNumberCell(row.max, 4)}</td>
+        <td class="metric-value">${formatNumberCell(row.null_percent, 2)}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table></div>`;
+}
+
+function renderTextCoverageLda() {
+  if (!textCoverageContent) return;
+  const badgeParts = [];
+  if (textCoverageRows.length) badgeParts.push(`${textCoverageRows.length} coverage rows`);
+  if (ldaTopicRows.length) badgeParts.push(`${new Set(ldaTopicRows.map(r => r.topic).filter(Boolean)).size} topics`);
+  if (textCoverageBadge) textCoverageBadge.textContent = badgeParts.join(" | ");
+  if (!textCoverageRows.length && !ldaTopicRows.length && !ldaTickerTopicRows.length) {
+    textCoverageContent.innerHTML = '<div class="empty-state">No text coverage or LDA outputs loaded.</div>';
+    return;
+  }
+
+  const coverageTable = textCoverageRows.length ? `<div class="evidence-subsection">
+    <span class="evidence-subsection-title">Coverage by split</span>
+    <div class="table-shell"><table class="evidence-table">
+      <thead><tr><th>Split</th><th>Status</th><th>Articles</th><th>Weekly rows</th><th>Tickers</th><th>Date range</th><th>Matched model rows</th></tr></thead>
+      <tbody>${textCoverageRows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.split || "")}</td>
+          <td>${escapeHtml(row.status || "")}</td>
+          <td class="metric-value">${escapeHtml(String(row.article_count ?? ""))}</td>
+          <td class="metric-value">${escapeHtml(String(row.weekly_text_rows ?? ""))}</td>
+          <td class="metric-value">${escapeHtml(String(row.unique_tickers ?? ""))}</td>
+          <td>${escapeHtml(`${row.date_start || ""} to ${row.date_end || ""}`)}</td>
+          <td class="metric-value">${escapeHtml(String(row.matched_model_rows ?? ""))}</td>
+        </tr>`).join("")}</tbody>
+    </table></div>
+  </div>` : "";
+
+  const topics = {};
+  ldaTopicRows.forEach(row => {
+    if (!row.topic) return;
+    if (!topics[row.topic]) topics[row.topic] = [];
+    topics[row.topic].push(row);
+  });
+  const topicTable = Object.keys(topics).length ? `<div class="evidence-subsection">
+    <span class="evidence-subsection-title">LDA topic words</span>
+    <div class="table-shell"><table class="evidence-table">
+      <thead><tr><th>Topic</th><th>Top words</th></tr></thead>
+      <tbody>${Object.entries(topics).map(([topic, rows]) => `
+        <tr>
+          <td>${escapeHtml(topic)}</td>
+          <td>${escapeHtml(rows.sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 8).map(row => row.word).join(", "))}</td>
+        </tr>`).join("")}</tbody>
+    </table></div>
+  </div>` : "";
+
+  const tickerTable = ldaTickerTopicRows.length ? `<div class="evidence-subsection">
+    <span class="evidence-subsection-title">Ticker dominant topics</span>
+    <div class="table-shell"><table class="evidence-table">
+      <thead><tr><th>Ticker</th><th>Articles</th><th>Dominant topic</th><th>Topic probability</th><th>Date range</th></tr></thead>
+      <tbody>${ldaTickerTopicRows.slice(0, 20).map(row => `
+        <tr>
+          <td>${escapeHtml(row.ticker || "")}</td>
+          <td class="metric-value">${escapeHtml(String(row.article_count ?? ""))}</td>
+          <td>${escapeHtml(row.dominant_topic || "")}</td>
+          <td class="metric-value">${formatNumberCell(row.topic_probability)}</td>
+          <td>${escapeHtml(`${row.date_start || ""} to ${row.date_end || ""}`)}</td>
+        </tr>`).join("")}</tbody>
+    </table></div>
+    ${ldaTickerTopicRows.length > 20 ? `<p class="status-text">Showing 20 of ${ldaTickerTopicRows.length} ticker-topic rows.</p>` : ""}
+  </div>` : "";
+
+  textCoverageContent.innerHTML = coverageTable + topicTable + tickerTable;
+}
+
+async function renderTextAnalytics() {
+  if (!textTickerSummaryContent || !textAnalyticsSummary || !textWordCloudContent) return;
+
+  const validRows = textualTickerSummaryRows.filter(row => row.status === "ok" && row.ticker);
+  const status = validRows.length ? "ok" : (textualTickerSummaryRows[0]?.status || textualAnalysisRows[0]?.status || "");
+  const note = textualTickerSummaryRows[0]?.note || textualAnalysisRows[0]?.note || "";
+
+  if (textAnalyticsBadge) {
+    textAnalyticsBadge.textContent = validRows.length ? `${validRows.length} tickers` : (status || "").replaceAll("_", " ");
+  }
+
+  if (!validRows.length) {
+    if (textAnalyticsStatus) {
+      textAnalyticsStatus.textContent = note || "Upload optional text files to score ESG-negative coverage.";
+    }
+    textAnalyticsSummary.innerHTML = '<div class="empty-state">No text ticker summary loaded.</div>';
+    textTickerSummaryContent.innerHTML = `<div class="text-limitation-box">
+      <p><strong>Status: ${escapeHtml(status || "unknown")}</strong></p>
+      <p>${escapeHtml(note || "Supply controversy_text.csv or news_text.csv to rank tickers by negative ESG controversy score.")}</p>
+    </div>`;
+  } else {
+    const avgScore = validRows.reduce((sum, row) => sum + (row.negative_esg_controversy_score_0_100 || 0), 0) / validRows.length;
+    const totalArticles = validRows.reduce((sum, row) => sum + row.article_count, 0);
+    const topRow = validRows[0];
+    if (textAnalyticsStatus) {
+      textAnalyticsStatus.textContent = `Ranked ${validRows.length} tickers from optional text uploads.`;
+    }
+    textAnalyticsSummary.innerHTML = `
+      <article class="metric-tile"><span>Average controversy score</span><strong>${avgScore.toFixed(1)}</strong></article>
+      <article class="metric-tile"><span>Highest ticker score</span><strong>${(topRow.negative_esg_controversy_score_0_100 || 0).toFixed(1)}</strong></article>
+      <article class="metric-tile"><span>Total text articles</span><strong>${totalArticles.toLocaleString()}</strong></article>
+      <article class="metric-tile"><span>Covered tickers</span><strong>${validRows.length}</strong></article>
+    `;
+    textTickerSummaryContent.innerHTML = `
+      <div class="table-shell"><table class="evidence-table">
+        <thead><tr><th>Ticker</th><th>Latest date</th><th>Score</th><th>Band</th><th>Articles</th><th>Sentiment</th><th>Controversy kw</th></tr></thead>
+        <tbody>${validRows.slice(0, 20).map(row => `
+          <tr>
+            <td>${escapeHtml(row.ticker)}</td>
+            <td>${escapeHtml(row.latest_text_date || "")}</td>
+            <td class="metric-value">${Number.isFinite(row.negative_esg_controversy_score_0_100) ? row.negative_esg_controversy_score_0_100.toFixed(1) : "—"}</td>
+            <td><span class="score-band ${String(row.score_band || "").toLowerCase()}">${escapeHtml(row.score_band || "—")}</span></td>
+            <td class="metric-value">${row.article_count.toLocaleString()}</td>
+            <td class="metric-value">${Number.isFinite(row.text_sentiment_score) ? row.text_sentiment_score.toFixed(4) : "—"}</td>
+            <td class="metric-value">${row.controversy_keyword_count.toLocaleString()}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table></div>
+      ${validRows.length > 20 ? `<p class="status-text">Showing 20 of ${validRows.length} rows.</p>` : ""}`;
+  }
+
+  await renderTextWordCloud();
+}
+
+async function renderTextWordCloud() {
+  if (!textWordCloudContent || !textWordCloudStatus) return;
+  let src = null;
+  for (const path of TEXT_WORD_CLOUD_PATHS) {
+    try {
+      const response = await fetch(path, { method: "HEAD", cache: "no-store" });
+      if (response.ok) {
+        src = path;
+        break;
+      }
+    } catch { /* try next path */ }
+  }
+  if (!src) {
+    textWordCloudStatus.textContent = "Word cloud appears after a local backend run writes outputs/figures/text_word_cloud.svg.";
+    textWordCloudContent.innerHTML = '<div class="empty-state">Word cloud not generated yet.</div>';
+    return;
+  }
+  textWordCloudStatus.textContent = "Word cloud loaded from generated backend output.";
+  textWordCloudContent.innerHTML = `<img src="${escapeHtml(src)}" alt="Text word cloud" loading="lazy">`;
+}
+
 async function renderReportFigures() {
   if (!reportFigures) return;
   const cards = await Promise.all(REPORT_FIGURES.map(async fig => {
@@ -1185,9 +1682,29 @@ function setTextualAnalysisRows(rows) {
   textualAnalysisRows = rows;
   renderTextualAnalysis();
   renderEvidenceHeadline();
+  renderTextAnalytics();
+}
+
+function setTextualTickerSummaryRows(rows) {
+  textualTickerSummaryRows = rows.map(normalizeTextualSummary);
+  renderTextAnalytics();
 }
 
 /* ── File I/O ──────────────────────────────────────────────────────────── */
+function setLatestArtifactRows(payload) {
+  textModelRows = payload.text_model_comparison || [];
+  tuningRows = payload.hyperparameter_tuning_results || [];
+  confusionRows = payload.confusion_matrix || [];
+  calibrationRows = payload.calibration_curve || [];
+  featureStatsRows = payload.feature_descriptive_stats || [];
+  textCoverageRows = payload.text_coverage || [];
+  ldaTopicRows = payload.lda_topic_words || [];
+  ldaTickerTopicRows = payload.lda_ticker_topics || [];
+  renderModelDiagnostics();
+  renderFeatureStats();
+  renderTextCoverageLda();
+}
+
 function selectedFile(input, label) {
   const [file] = Array.from(input.files || []);
   if (!file) throw new Error(`Choose ${label}.`);
@@ -1351,6 +1868,8 @@ async function runLiveApiScore(event) {
     form.append("benchmark_prices", selectedFile(rawBenchmark, "benchmark_prices"));
     form.append("fundamentals", selectedFile(rawFundamentals, "fundamentals"));
     form.append("controversies", selectedFile(rawControversies, "controversies"));
+    if ((rawNewsText.files || []).length) form.append("news_text", selectedFile(rawNewsText, "news_text"));
+    if ((rawControversyText.files || []).length) form.append("controversy_text", selectedFile(rawControversyText, "controversy_text"));
     form.append("tune", apiTune.checked ? "true" : "false");
   } catch (err) {
     apiStatus.textContent = err.message;
@@ -1368,16 +1887,19 @@ async function runLiveApiScore(event) {
       throw new Error(detail || `API request failed with status ${response.status}.`);
     }
 
-    setRows(payload.scores || [], `Loaded ${payload.scores?.length || 0} scores from Render API.`);
+    setRows(payload.scores || [], `Loaded ${payload.scores?.length || 0} scores from the hosted API.`);
     setPriceData(payload.price_history || [], payload.price_scenarios || [], "Loaded live price history and scenarios.");
     setComparisonRows(payload.model_comparison || [], "Loaded live ESG comparison.");
     setAlgoRows(payload.algorithm_comparison || [], "Loaded live algorithm comparison.");
     setImportanceRows(payload.feature_importance || [], "Loaded live feature importance.");
     setBizRows(payload.business_analysis || [], "Loaded live business analysis.");
+    setQuarterBt(payload.quarter_backtest || {});
     setDataSummaryRows(payload.data_summary || [], `Loaded ${payload.data_summary?.length || 0} data summary rows from API.`);
     setCleaningLogRows(payload.cleaning_log || []);
     setSqlSummaryRows(payload.sql_summary || []);
     setTextualAnalysisRows(payload.textual_analysis || []);
+    setTextualTickerSummaryRows(payload.textual_ticker_summary || []);
+    setLatestArtifactRows(payload);
     renderReportFigures();
     renderReportDownloads();
     const scoreCount = payload.metadata?.score_count || 0;
@@ -1485,6 +2007,38 @@ async function loadDefaultBizAnalysis() {
   } catch { setBizRows(DEMO_BIZ_ROWS, "Demo business analysis is showing until you run a live upload."); }
 }
 
+async function loadDefaultQuarterBacktest() {
+  try {
+    const [retRows, exclRows] = await Promise.all([
+      loadCsvFirst(["outputs/quarter_backtest_returns.csv", "../outputs/quarter_backtest_returns.csv"]),
+      loadCsvFirst(["outputs/quarter_excluded_stocks.csv", "../outputs/quarter_excluded_stocks.csv"]),
+    ]);
+    if (!retRows.length || !exclRows.length) throw new Error("empty");
+    const weeklySeries   = retRows.map(r => ({ date: r.date, strategy_cumulative: Number(r.strategy_cumulative), benchmark_cumulative: Number(r.benchmark_cumulative) }));
+    const excl           = exclRows.map(r => ({ ticker: r.ticker, crash_probability: Number(r.crash_probability), quarter_return: r.quarter_return !== "" ? Number(r.quarter_return) : null, outcome: r.outcome }));
+    const lastS  = weeklySeries[weeklySeries.length - 1].strategy_cumulative;
+    const lastB  = weeklySeries[weeklySeries.length - 1].benchmark_cumulative;
+    const alpha  = lastS - lastB;
+    const correct = excl.filter(t => t.quarter_return != null && t.quarter_return < 0).length;
+    const withData = excl.filter(t => t.quarter_return != null).length;
+    setQuarterBt({
+      cutoff_date: retRows[0] ? retRows[0].date : "",
+      quarter_label: "Q4 2024",
+      forward_weeks: weeklySeries.length,
+      strategy_quarter_return: lastS - 1,
+      benchmark_quarter_return: lastB - 1,
+      outperformance_bps: Math.round(alpha * 10000),
+      dollar_impact_quarter: Math.round(1e9 * alpha),
+      dollar_impact_annualised: Math.round(1e9 * alpha * 4),
+      n_excluded: excl.length,
+      n_held: 50 - excl.length,
+      pct_excluded_correct: withData > 0 ? correct / withData : null,
+      excluded_tickers: excl,
+      weekly_series: weeklySeries,
+    });
+  } catch { setQuarterBt(DEMO_QUARTER_BT); }
+}
+
 async function loadDefaultDataSummary() {
   try {
     const rows = await loadCsvFirst(["outputs/data_summary.csv", "../outputs/data_summary.csv"]);
@@ -1517,7 +2071,54 @@ async function loadDefaultTextualAnalysis() {
   } catch { setTextualAnalysisRows(DEMO_TEXTUAL_ANALYSIS); }
 }
 
+async function loadDefaultTextualTickerSummary() {
+  try {
+    const rows = await loadCsvFirst(["outputs/textual_ticker_summary.csv", "../outputs/textual_ticker_summary.csv"]);
+    if (!rows.length) throw new Error("empty");
+    setTextualTickerSummaryRows(rows);
+  } catch { setTextualTickerSummaryRows(DEMO_TEXTUAL_TICKER_SUMMARY.filter(row => row.status === "ok")); }
+}
+
 /* ── Event listeners ───────────────────────────────────────────────────── */
+async function loadDefaultLatestArtifacts() {
+  const loadOptional = async paths => {
+    try {
+      return await loadCsvFirst(paths);
+    } catch {
+      return [];
+    }
+  };
+  const [
+    textModel,
+    tuning,
+    confusion,
+    calibration,
+    featureStats,
+    textCoverage,
+    ldaTopics,
+    ldaTickerTopics,
+  ] = await Promise.all([
+    loadOptional(["outputs/text_model_comparison.csv", "../outputs/text_model_comparison.csv"]),
+    loadOptional(["outputs/hyperparameter_tuning_results.csv", "../outputs/hyperparameter_tuning_results.csv"]),
+    loadOptional(["outputs/confusion_matrix.csv", "../outputs/confusion_matrix.csv"]),
+    loadOptional(["outputs/calibration_curve.csv", "../outputs/calibration_curve.csv"]),
+    loadOptional(["outputs/feature_descriptive_stats.csv", "../outputs/feature_descriptive_stats.csv"]),
+    loadOptional(["outputs/text_coverage.csv", "../outputs/text_coverage.csv"]),
+    loadOptional(["outputs/lda_topic_words.csv", "../outputs/lda_topic_words.csv"]),
+    loadOptional(["outputs/lda_ticker_topics.csv", "../outputs/lda_ticker_topics.csv"]),
+  ]);
+  setLatestArtifactRows({
+    text_model_comparison: textModel,
+    hyperparameter_tuning_results: tuning,
+    confusion_matrix: confusion,
+    calibration_curve: calibration,
+    feature_descriptive_stats: featureStats,
+    text_coverage: textCoverage,
+    lda_topic_words: ldaTopics,
+    lda_ticker_topics: ldaTickerTopics,
+  });
+}
+
 attachSectionInfoButtons();
 
 uploadInput.addEventListener("change", e => {
@@ -1532,6 +2133,8 @@ rawPrices.addEventListener("change", () => updateFileStatus(rawPrices, rawPrices
 rawBenchmark.addEventListener("change", () => updateFileStatus(rawBenchmark, rawBenchmarkStatus));
 rawFundamentals.addEventListener("change", () => updateFileStatus(rawFundamentals, rawFundamentalsStatus));
 rawControversies.addEventListener("change", () => updateFileStatus(rawControversies, rawControversiesStatus));
+rawNewsText.addEventListener("change", () => updateFileStatus(rawNewsText, rawNewsTextStatus));
+rawControversyText.addEventListener("change", () => updateFileStatus(rawControversyText, rawControversyTextStatus));
 apiUploadForm.addEventListener("submit", runLiveApiScore);
 sampleGuideButton.addEventListener("click", openSampleGuide);
 sampleGuideClose.addEventListener("click", closeSampleGuide);
@@ -1558,9 +2161,13 @@ loadDefaultComparison();
 loadDefaultAlgoComparison();
 loadDefaultImportance();
 loadDefaultBizAnalysis();
+loadDefaultQuarterBacktest();
 loadDefaultDataSummary();
 loadDefaultCleaningLog();
 loadDefaultSqlSummary();
 loadDefaultTextualAnalysis();
+loadDefaultTextualTickerSummary();
+loadDefaultLatestArtifacts();
+renderTextAnalytics();
 renderReportFigures();
 renderReportDownloads();

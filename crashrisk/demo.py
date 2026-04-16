@@ -18,7 +18,7 @@ def main() -> None:
         "--tune",
         action="store_true",
         default=False,
-        help="Run GridSearchCV hyperparameter tuning (slower but more thorough).",
+        help="Run GridSearchCV hyperparameter tuning and write best-parameter results.",
     )
     args = parser.parse_args()
 
@@ -43,6 +43,7 @@ def main() -> None:
     print(f"Wrote algorithm comparison   : {outputs / 'algorithm_comparison.csv'}")
     print(f"Wrote feature importance     : {outputs / 'feature_importance.csv'}")
     print(f"Wrote business analysis      : {outputs / 'business_analysis.csv'}")
+    print(f"Wrote portfolio returns      : {outputs / 'business_portfolio_returns.csv'}")
     print(f"Wrote data summary           : {outputs / 'data_summary.csv'}")
     print(f"Wrote cleaning log           : {outputs / 'cleaning_log.csv'}")
     print(f"Wrote SQL summary            : {outputs / 'sql_summary.md'}")
@@ -64,8 +65,15 @@ def main() -> None:
         print(f"  Strategy Sharpe      : {biz.get('strategy_sharpe', 'N/A')}")
         print(f"  Max drawdown (strat) : {biz.get('max_drawdown_strategy', 'N/A')}")
         gain = biz.get("economic_gain_annual", 0)
-        print(f"  Economic gain / yr   : ${gain:,.0f}" if isinstance(gain, (int, float)) else f"  Economic gain / yr   : {gain}")
+        print(
+            f"  Illustrative gain / yr: ${gain:,.0f}"
+            if isinstance(gain, (int, float))
+            else f"  Illustrative gain / yr: {gain}"
+        )
+        print(f"  Illustrative Team ROI: {biz.get('team_roi', 'N/A')}x")
         print(f"  Justifies team?      : {biz.get('justifies_team', False)}")
+        print("  Note                 : Stylised simulation; transaction costs, market impact,")
+        print("                         and model uncertainty would likely reduce realised returns.")
 
     print("\nOpen the dashboard by serving the project folder:")
     print("  python -m http.server 8000")

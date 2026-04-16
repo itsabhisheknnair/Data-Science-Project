@@ -17,6 +17,7 @@ dependencies = [
   "uvicorn[standard]",
   "python-multipart",
   "yfinance",
+  "wordcloud",
 ]
 
 [tool.pytest.ini_options]

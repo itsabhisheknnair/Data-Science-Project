@@ -44,10 +44,18 @@ Outputs:
 - `outputs/algorithm_comparison.csv`
 - `outputs/feature_importance.csv`
 - `outputs/business_analysis.csv`
+- `outputs/business_portfolio_returns.csv`
 - `outputs/data_summary.csv`
 - `outputs/cleaning_log.csv`
 - `outputs/sql_summary.md`
 - `outputs/textual_analysis.csv`
+- `outputs/text_coverage.csv`
+- `outputs/lda_topic_words.csv`
+- `outputs/text_model_comparison.csv`
+- `outputs/hyperparameter_tuning_results.csv`
+- `outputs/confusion_matrix.csv`
+- `outputs/calibration_curve.csv`
+- `outputs/feature_descriptive_stats.csv`
 - `outputs/figures/`
 
 ## Demo
@@ -86,7 +94,15 @@ The frontend expects this score file:
 - `outputs/cleaning_log.csv`: report-ready cleaning checks, invalid-row counts, date-alignment notes, and look-ahead-bias controls
 - `outputs/sql_summary.md`: SQL queries and result tables for the data-summary section of the report
 - `outputs/textual_analysis.csv`: optional headline/text sentiment features when a `news_text` or `controversy_text` file is supplied; otherwise a limitation row is written
-- `outputs/figures/`: SVG charts for risk ranking, controversy distribution, feature importance, ESG lift, price scenario range, and text word cloud
+- `outputs/textual_bigram_terms.csv`: top positive/negative TF-IDF bigrams used in the sentiment word clouds
+- `outputs/text_coverage.csv`: article coverage by train/validation/test split for the text signal
+- `outputs/lda_topic_words.csv` and `outputs/lda_ticker_topics.csv`: topic-model outputs for the text corpus
+- `outputs/text_model_comparison.csv`: full ESG model versus full ESG plus text-derived features
+- `outputs/hyperparameter_tuning_results.csv`: searched grids and best CV settings
+- `outputs/confusion_matrix.csv` and `outputs/calibration_curve.csv`: test-set classification and probability diagnostics
+- `outputs/feature_descriptive_stats.csv`: descriptive statistics for every configured feature
+- `outputs/business_portfolio_returns.csv`: weekly forward strategy vs benchmark returns after excluding High-risk stocks
+- `outputs/figures/`: SVG/PNG charts for risk ranking, controversy distribution, feature importance, ESG lift, price scenario range, and text bigram word clouds
 
 The price graph is a 13-week scenario range based on historical volatility and crash probability. It is not a single point price forecast.
 
@@ -97,9 +113,9 @@ The ESG model comparison report is the key research artifact for testing whether
 Every `crashrisk.demo` or `crashrisk.cli` run now writes report-ready files for the FIN42110 project sections:
 
 - Data summary and cleaning: `data_summary.csv`, `cleaning_log.csv`, `sql_summary.md`
-- Textual analysis: `textual_analysis.csv` and `figures/text_word_cloud.svg`
-- Machine learning: `algorithm_comparison.csv`, `esg_model_comparison.csv`, `feature_importance.csv`
-- Business analysis: `business_analysis.csv`
+- Textual analysis: `textual_analysis.csv`, `textual_ticker_summary.csv`, `text_coverage.csv`, `text_model_comparison.csv`, `lda_topic_words.csv`, `lda_ticker_topics.csv`, `figures/lda_topic_distribution.png`, `textual_bigram_terms.csv`, `figures/text_word_cloud.svg`, `figures/bullish_signals_bigrams.png`, and `figures/bearish_signals_bigrams.png`
+- Machine learning: `algorithm_comparison.csv`, `esg_model_comparison.csv`, `hyperparameter_tuning_results.csv`, `confusion_matrix.csv`, `calibration_curve.csv`, `feature_importance.csv`
+- Business analysis: `business_analysis.csv`, `business_portfolio_returns.csv`
 - Visualisations: `outputs/figures/*.svg`
 - Report skeleton: `outputs/fds_report_outline.md`
 
@@ -112,7 +128,8 @@ This repo is prepared for a static Netlify frontend with `netlify.toml`.
 Netlify will:
 
 - publish the `frontend/` folder
-- use the dashboard's built-in demo fallback data until you connect the Render API
+- use the dashboard's built-in demo fallback data until live files are uploaded
+- proxy `/api/*` requests to the hosted FastAPI backend defined in `render.yaml`
 
 Deploy settings:
 
@@ -120,6 +137,8 @@ Deploy settings:
 - Publish directory: `frontend`
 
 Recommended deploy path: connect the GitHub repo to Netlify. Netlify only needs to host the static dashboard.
+
+The frontend uses `/api/predict` on deployed static hosts. The `netlify.toml` redirect proxies that path to `https://crashrisk-api.onrender.com`, avoiding browser-side CORS friction and keeping the backend URL out of the visible upload flow. For local development, the frontend falls back to the same Render API URL directly.
 
 If you use Netlify drag-and-drop instead, run this first and then upload the `frontend/` folder:
 
@@ -159,7 +178,7 @@ Optional text-analysis fields:
 
 These optional text files should include `ticker`, `date`, and at least one of `headline`, `title`, `description`, `body`, `text`, or `summary`.
 
-Once the Render service is deployed, keep the frontend's fixed API URL pointed to that service, upload the four raw files, and run a live score. The frontend will replace the static demo outputs with the API response.
+Once the Render service is deployed, Netlify can proxy `/api/predict` to that service. Upload the four raw files and run a live score; the frontend will replace the static demo outputs with the API response.
 
 Important input limitation:
 

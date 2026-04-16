@@ -3,12 +3,18 @@ from __future__ import annotations
 import html
 import json
 import re
+import shutil
 import sqlite3
-from collections import Counter
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS, TfidfVectorizer
+from wordcloud import WordCloud
 
 from crashrisk.config import CrashRiskConfig, RawDataPaths
 from crashrisk.data.loaders import (
@@ -16,6 +22,7 @@ from crashrisk.data.loaders import (
     CONTROVERSY_COLUMNS,
     FUNDAMENTAL_COLUMNS,
     PRICE_COLUMNS,
+    _parse_dates,
     load_raw_data,
     read_tabular,
 )
@@ -23,6 +30,17 @@ from crashrisk.data.loaders import (
 
 TEXT_FILE_STEMS = ("controversy_text", "news_text", "textual_data")
 TEXT_COLUMNS = ("headline", "title", "description", "body", "text", "summary")
+TEXT_COLUMN_ALIASES = {
+    "ticker": ("ticker", "symbol", "security", "stock", "companyticker", "tickercode"),
+    "date": ("date", "publishdate", "publisheddate", "publicationdate", "storydate", "newsdate", "datetime", "timestamp"),
+    "source": ("source", "provider", "newssource", "publisher", "vendor"),
+    "headline": ("headline", "headlinetext", "newsheadline"),
+    "title": ("title", "storytitle", "newstitle"),
+    "description": ("description", "subtitle", "snippet", "abstract", "deck"),
+    "body": ("body", "story", "storytext", "article", "articletext", "content"),
+    "text": ("text", "fulltext", "documenttext", "newstext"),
+    "summary": ("summary", "brief", "synopsis"),
+}
 NEGATIVE_WORDS = {
     "abuse",
     "accident",
@@ -99,6 +117,68 @@ STOP_WORDS = {
     "to",
     "with",
 }
+BIGRAM_STOP_WORDS = set(ENGLISH_STOP_WORDS).union(
+    STOP_WORDS,
+    {
+        "analysts",
+        "article",
+        "commentary",
+        "company",
+        "coverage",
+        "esg",
+        "external",
+        "faces",
+        "firm",
+        "follow",
+        "group",
+        "headlines",
+        "highlights",
+        "linked",
+        "market",
+        "monitor",
+        "month",
+        "news",
+        "note",
+        "ongoing",
+        "reports",
+        "review",
+        "risk",
+        "risks",
+        "said",
+        "score",
+        "signal",
+        "signals",
+        "text",
+    },
+)
+FEATURE_GROUPS = {
+    "lagged_ncskew": "Crash history",
+    "lagged_duvol": "Crash history",
+    "detrended_turnover": "Trading activity",
+    "trailing_return": "Downside risk",
+    "realized_volatility": "Downside risk",
+    "beta": "Downside risk",
+    "downside_beta": "Downside risk",
+    "relative_downside_beta": "Downside risk",
+    "market_cap": "Fundamentals",
+    "market_to_book": "Fundamentals",
+    "leverage": "Fundamentals",
+    "roa": "Fundamentals",
+    "controversy_score": "ESG controversy",
+    "controversy_change_4w": "ESG controversy",
+    "controversy_change_13w": "ESG controversy",
+    "controversy_change_26w": "ESG controversy",
+    "controversy_rolling_mean_13w": "ESG controversy",
+    "controversy_rolling_std_13w": "ESG controversy",
+    "controversy_spike_flag": "ESG controversy",
+    "controversy_sector_percentile": "ESG controversy",
+    "negative_esg_controversy_score_0_100": "Text signal",
+    "rolling_sentiment_13w": "Text signal",
+}
+TEXT_SIGNAL_COLUMNS = (
+    "negative_esg_controversy_score_0_100",
+    "rolling_sentiment_13w",
+)
 
 
 def build_report_artifacts(
@@ -112,6 +192,8 @@ def build_report_artifacts(
     model_comparison: pd.DataFrame,
     outputs_dir: str | Path,
     config: CrashRiskConfig | None = None,
+    text_outputs: dict[str, pd.DataFrame] | None = None,
+    calibration_curve: pd.DataFrame | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Build FDS report-ready outputs without changing the model signal."""
     config = config or CrashRiskConfig()
@@ -120,8 +202,13 @@ def build_report_artifacts(
     outputs_dir = Path(outputs_dir)
 
     data_summary, cleaning_log = build_data_summary(paths, raw, feature_panel, dataset, scores, config)
+    feature_descriptive_stats = build_feature_descriptive_stats(feature_panel, config)
+    feature_correlation_matrix = build_feature_correlation_matrix(feature_panel, config)
     sql_summary = build_sql_summary(raw, feature_panel, dataset, scores)
-    textual_analysis = build_textual_analysis(paths, config=config)
+    if text_outputs is None:
+        text_outputs = build_text_analysis_outputs(paths, config=config)
+    text_coverage = build_text_coverage(text_outputs["weekly"], dataset, config=config)
+    lda_outputs = build_lda_topic_outputs(paths, config=config)
     write_sql_summary_markdown(sql_summary, outputs_dir / "sql_summary.md")
     write_report_figures(
         feature_panel=feature_panel,
@@ -130,8 +217,12 @@ def build_report_artifacts(
         feature_importance=feature_importance,
         model_comparison=model_comparison,
         figures_dir=outputs_dir / "figures",
+        feature_correlation_matrix=feature_correlation_matrix,
+        calibration_curve=calibration_curve,
+        lda_ticker_topics=lda_outputs["ticker_topics"],
     )
     write_text_word_cloud(paths, outputs_dir / "figures" / "text_word_cloud.svg")
+    write_price_time_series(feature_panel, scores, outputs_dir / "figures" / "price_time_series.png")
     write_report_outline(
         data_summary=data_summary,
         model_comparison=model_comparison,
@@ -141,8 +232,14 @@ def build_report_artifacts(
     return {
         "data_summary": data_summary,
         "cleaning_log": cleaning_log,
+        "feature_descriptive_stats": feature_descriptive_stats,
+        "feature_correlation_matrix": feature_correlation_matrix,
         "sql_summary": sql_summary,
-        "textual_analysis": textual_analysis,
+        "textual_analysis": text_outputs["weekly"],
+        "textual_ticker_summary": text_outputs["ticker_summary"],
+        "text_coverage": text_coverage,
+        "lda_topic_words": lda_outputs["topic_words"],
+        "lda_ticker_topics": lda_outputs["ticker_topics"],
     }
 
 
@@ -180,17 +277,84 @@ def build_data_summary(
             add_summary(summary_rows, name, "date_end", dates.max().date() if not dates.empty else "", "Latest loaded date.")
 
         blank_required = 0
+        missing_required_rows = pd.Series(False, index=original.index)
         for column in required_columns:
             if column in original:
                 values = original[column]
-                blank_required += int(values.isna().sum())
+                blank_mask = values.isna()
                 if values.dtype == object:
-                    blank_required += int(values.astype(str).str.strip().eq("").sum())
+                    blank_mask = blank_mask | values.astype(str).str.strip().eq("")
+                blank_required += int(blank_mask.sum())
+                missing_required_rows = missing_required_rows | blank_mask
         duplicates = int(original.duplicated().sum())
         dropped = max(0, len(original) - len(loaded))
-        add_cleaning(cleaning_rows, name, "missing_required_values", blank_required, "Blank or NA values in required columns before loading.")
-        add_cleaning(cleaning_rows, name, "duplicate_rows", duplicates, "Fully duplicated raw rows.")
-        add_cleaning(cleaning_rows, name, "rows_removed_or_invalid", dropped, "Rows not retained by the validated loader.")
+        add_cleaning(
+            cleaning_rows,
+            name,
+            "missing_required_values",
+            blank_required,
+            "Blank or NA cells in required columns before loading; zero means the raw required fields were complete.",
+            denominator=max(1, len(original) * len(required_columns)),
+        )
+        add_cleaning(
+            cleaning_rows,
+            name,
+            "missing_required_rows",
+            int(missing_required_rows.sum()),
+            "Rows containing at least one blank required field before loading.",
+            denominator=max(1, len(original)),
+        )
+        add_cleaning(
+            cleaning_rows,
+            name,
+            "duplicate_rows",
+            duplicates,
+            "Fully duplicated raw rows; zero means no exact duplicate records were removed.",
+            denominator=max(1, len(original)),
+        )
+        add_cleaning(
+            cleaning_rows,
+            name,
+            "rows_removed_or_invalid",
+            dropped,
+            "Rows not retained by the validated loader after parsing, type coercion, and required-date filtering.",
+            denominator=max(1, len(original)),
+        )
+        if date_column in original:
+            parsed_dates = _parse_dates(original[date_column])
+            add_cleaning(
+                cleaning_rows,
+                name,
+                f"invalid_{date_column}_values",
+                int(parsed_dates.isna().sum()),
+                f"Rows where {date_column} could not be parsed as a date.",
+                denominator=max(1, len(original)),
+            )
+        id_columns = ["ticker", date_column] if "ticker" in original.columns else [date_column]
+        if all(column in original.columns for column in id_columns):
+            add_cleaning(
+                cleaning_rows,
+                name,
+                "duplicate_entity_date_rows",
+                int(original.duplicated(subset=id_columns).sum()),
+                f"Duplicate rows by {', '.join(id_columns)} before loading.",
+                denominator=max(1, len(original)),
+            )
+        for column in numeric_columns_for_dataset(name):
+            if column in original:
+                raw_values = original[column]
+                nonblank = raw_values.notna()
+                if raw_values.dtype == object:
+                    nonblank = nonblank & raw_values.astype(str).str.strip().ne("")
+                coerced = pd.to_numeric(raw_values, errors="coerce")
+                add_cleaning(
+                    cleaning_rows,
+                    name,
+                    f"{column}_numeric_coercion_failures",
+                    int((nonblank & coerced.isna()).sum()),
+                    f"Nonblank {column} values that could not be coerced to numeric.",
+                    denominator=max(1, int(nonblank.sum())),
+                )
 
     prices_original = read_tabular(paths.prices)
     if "adj_close" in prices_original:
@@ -200,7 +364,67 @@ def build_data_summary(
             "prices",
             "zero_or_negative_adj_close",
             int((prices_numeric <= 0).sum()),
-            "Rows with non-positive adjusted prices; these should be investigated or removed.",
+            "Rows with non-positive adjusted prices; zero confirms all retained price levels are positive.",
+            denominator=max(1, len(prices_original)),
+        )
+    if "volume" in prices_original:
+        volume_numeric = pd.to_numeric(prices_original["volume"], errors="coerce")
+        add_cleaning(
+            cleaning_rows,
+            "prices",
+            "zero_or_negative_volume",
+            int((volume_numeric <= 0).sum()),
+            "Rows with non-positive trading volume; zero confirms volume inputs are positive.",
+            denominator=max(1, len(prices_original)),
+        )
+
+    benchmark_original = read_tabular(paths.benchmark_prices)
+    if "benchmark_close" in benchmark_original:
+        benchmark_numeric = pd.to_numeric(benchmark_original["benchmark_close"], errors="coerce")
+        add_cleaning(
+            cleaning_rows,
+            "benchmark_prices",
+            "zero_or_negative_benchmark_close",
+            int((benchmark_numeric <= 0).sum()),
+            "Rows with non-positive benchmark prices; zero confirms the market proxy is positive.",
+            denominator=max(1, len(benchmark_original)),
+        )
+
+    fundamentals_original = read_tabular(paths.fundamentals)
+    for column in ("market_cap", "shares_outstanding", "market_to_book", "leverage", "roa"):
+        if column in fundamentals_original:
+            values = pd.to_numeric(fundamentals_original[column], errors="coerce")
+            missing_count = int(values.isna().sum())
+            add_cleaning(
+                cleaning_rows,
+                "fundamentals",
+                f"retained_missing_{column}",
+                missing_count,
+                f"Missing {column} values retained for model-stage median imputation; zero means no imputation was needed for this field.",
+                denominator=max(1, len(fundamentals_original)),
+            )
+    for column in ("market_cap", "shares_outstanding"):
+        if column in fundamentals_original:
+            values = pd.to_numeric(fundamentals_original[column], errors="coerce")
+            add_cleaning(
+                cleaning_rows,
+                "fundamentals",
+                f"zero_or_negative_{column}",
+                int((values <= 0).sum()),
+                f"Rows with non-positive {column}; zero confirms the scale input is positive.",
+                denominator=max(1, len(fundamentals_original)),
+            )
+
+    controversies_original = read_tabular(paths.controversies)
+    if "controversy_score" in controversies_original:
+        controversy_numeric = pd.to_numeric(controversies_original["controversy_score"], errors="coerce")
+        add_cleaning(
+            cleaning_rows,
+            "controversies",
+            "negative_controversy_score",
+            int((controversy_numeric < 0).sum()),
+            "Rows with negative controversy scores; zero confirms scores are non-negative.",
+            denominator=max(1, len(controversies_original)),
         )
 
     add_summary(summary_rows, "feature_panel", "rows", len(feature_panel), "Weekly ticker-date feature rows.")
@@ -239,8 +463,371 @@ def add_summary(rows: list[dict[str, object]], section: str, metric: str, value:
     rows.append({"section": section, "metric": metric, "value": value, "detail": detail})
 
 
-def add_cleaning(rows: list[dict[str, object]], dataset: str, check: str, value: object, detail: str) -> None:
-    rows.append({"dataset": dataset, "check": check, "value": value, "detail": detail})
+def add_cleaning(
+    rows: list[dict[str, object]],
+    dataset: str,
+    check: str,
+    value: object,
+    detail: str,
+    denominator: int | None = None,
+) -> None:
+    percent = ""
+    if denominator is not None:
+        try:
+            percent = round(float(value) / denominator * 100.0, 4)
+        except (TypeError, ValueError, ZeroDivisionError):
+            percent = ""
+    rows.append(
+        {
+            "dataset": dataset,
+            "check": check,
+            "value": value,
+            "denominator": denominator if denominator is not None else "",
+            "percent": percent,
+            "detail": detail,
+        }
+    )
+
+
+def numeric_columns_for_dataset(name: str) -> tuple[str, ...]:
+    if name == "prices":
+        return ("adj_close", "volume")
+    if name == "benchmark_prices":
+        return ("benchmark_close",)
+    if name == "fundamentals":
+        return ("market_cap", "shares_outstanding", "market_to_book", "leverage", "roa")
+    if name == "controversies":
+        return ("controversy_score",)
+    return ()
+
+
+def build_feature_descriptive_stats(feature_panel: pd.DataFrame, config: CrashRiskConfig) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    n_rows = len(feature_panel)
+    for feature in config.feature_columns:
+        if feature not in feature_panel.columns:
+            rows.append(
+                {
+                    "feature": feature,
+                    "feature_group": FEATURE_GROUPS.get(feature, "Other"),
+                    "count": 0,
+                    "mean": np.nan,
+                    "std": np.nan,
+                    "min": np.nan,
+                    "max": np.nan,
+                    "null_count": n_rows,
+                    "null_percent": 100.0 if n_rows else np.nan,
+                }
+            )
+            continue
+        values = pd.to_numeric(feature_panel[feature], errors="coerce")
+        rows.append(
+            {
+                "feature": feature,
+                "feature_group": FEATURE_GROUPS.get(feature, "Other"),
+                "count": int(values.notna().sum()),
+                "mean": float(values.mean()) if values.notna().any() else np.nan,
+                "std": float(values.std()) if values.notna().sum() > 1 else np.nan,
+                "min": float(values.min()) if values.notna().any() else np.nan,
+                "max": float(values.max()) if values.notna().any() else np.nan,
+                "null_count": int(values.isna().sum()),
+                "null_percent": round(float(values.isna().mean() * 100.0), 4) if n_rows else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_feature_correlation_matrix(feature_panel: pd.DataFrame, config: CrashRiskConfig) -> pd.DataFrame:
+    features = list(config.feature_columns)
+    matrix_input = pd.DataFrame(index=feature_panel.index)
+    for feature in features:
+        matrix_input[feature] = pd.to_numeric(
+            feature_panel[feature] if feature in feature_panel.columns else pd.Series(np.nan, index=feature_panel.index),
+            errors="coerce",
+        )
+    corr = matrix_input.corr(method="pearson")
+    corr = corr.reindex(index=features, columns=features)
+    corr.insert(0, "feature", corr.index)
+    return corr.reset_index(drop=True)
+
+
+def join_text_signals_to_panel(feature_panel: pd.DataFrame, weekly_text: pd.DataFrame) -> pd.DataFrame:
+    panel = feature_panel.copy()
+    for column in (*TEXT_SIGNAL_COLUMNS, "text_article_count"):
+        if column not in panel.columns:
+            panel[column] = np.nan
+
+    if weekly_text.empty or "status" not in weekly_text.columns or not weekly_text["status"].eq("ok").any():
+        return panel
+
+    required = {"ticker", "date", *TEXT_SIGNAL_COLUMNS}
+    if not required.issubset(weekly_text.columns):
+        return panel
+
+    text_columns = ["ticker", "date", *TEXT_SIGNAL_COLUMNS]
+    if "article_count" in weekly_text.columns:
+        text_columns.append("article_count")
+    text_features = weekly_text.loc[weekly_text["status"].eq("ok"), text_columns].copy()
+    text_features["ticker"] = text_features["ticker"].astype(str).str.upper().str.strip()
+    text_features["date"] = pd.to_datetime(text_features["date"], errors="coerce")
+    text_features = text_features.dropna(subset=["ticker", "date"]).drop_duplicates(["ticker", "date"], keep="last")
+    if "article_count" in text_features.columns:
+        text_features = text_features.rename(columns={"article_count": "text_article_count"})
+
+    panel["date"] = pd.to_datetime(panel["date"], errors="coerce")
+    panel = panel.drop(columns=[column for column in (*TEXT_SIGNAL_COLUMNS, "text_article_count") if column in panel.columns])
+    panel = panel.merge(text_features, on=["ticker", "date"], how="left")
+    return panel
+
+
+def build_text_coverage(
+    weekly_text: pd.DataFrame,
+    dataset: pd.DataFrame,
+    config: CrashRiskConfig | None = None,
+) -> pd.DataFrame:
+    config = config or CrashRiskConfig()
+    columns = [
+        "split",
+        "status",
+        "source_file",
+        "article_count",
+        "weekly_text_rows",
+        "unique_tickers",
+        "date_start",
+        "date_end",
+        "avg_articles_per_ticker",
+        "matched_model_rows",
+    ]
+    if weekly_text.empty or "status" not in weekly_text.columns or not weekly_text["status"].eq("ok").any():
+        status = weekly_text.iloc[0].get("status", "no_text_file") if not weekly_text.empty else "no_text_file"
+        source_file = weekly_text.iloc[0].get("source_file", "") if not weekly_text.empty else ""
+        return pd.DataFrame(
+            [
+                {
+                    "split": "overall",
+                    "status": status,
+                    "source_file": source_file,
+                    "article_count": 0,
+                    "weekly_text_rows": 0,
+                    "unique_tickers": 0,
+                    "date_start": "",
+                    "date_end": "",
+                    "avg_articles_per_ticker": np.nan,
+                    "matched_model_rows": 0,
+                }
+            ],
+            columns=columns,
+        )
+
+    text_ok = weekly_text.loc[weekly_text["status"].eq("ok")].copy()
+    text_ok["date"] = pd.to_datetime(text_ok["date"], errors="coerce")
+    text_ok = text_ok.dropna(subset=["ticker", "date"])
+
+    labeled = dataset.dropna(subset=["high_crash_risk"]).copy()
+    labeled["date"] = pd.to_datetime(labeled["date"], errors="coerce")
+    splits = chronological_split_for_coverage(labeled, config)
+
+    rows = [summarize_text_coverage("overall", text_ok, labeled)]
+    for split_name, split_frame in splits.items():
+        split_dates = set(split_frame["date"].dropna().unique())
+        split_text = text_ok.loc[text_ok["date"].isin(split_dates)].copy()
+        rows.append(summarize_text_coverage(split_name, split_text, split_frame))
+    source_file = str(text_ok["source_file"].dropna().iloc[0]) if "source_file" in text_ok and text_ok["source_file"].notna().any() else ""
+    for row in rows:
+        row["status"] = "ok"
+        row["source_file"] = source_file
+    return pd.DataFrame(rows, columns=columns)
+
+
+def chronological_split_for_coverage(dataset: pd.DataFrame, config: CrashRiskConfig) -> dict[str, pd.DataFrame]:
+    sorted_df = dataset.sort_values("date").copy()
+    unique_dates = pd.Series(sorted_df["date"].dropna().sort_values().unique())
+    if len(unique_dates) < 3:
+        return {"train": sorted_df.iloc[0:0], "validation": sorted_df.iloc[0:0], "test": sorted_df}
+    train_end = max(1, int(len(unique_dates) * config.train_fraction))
+    validation_end = max(train_end + 1, int(len(unique_dates) * (config.train_fraction + config.validation_fraction)))
+    validation_end = min(validation_end, len(unique_dates) - 1)
+    train_dates = set(unique_dates.iloc[:train_end])
+    validation_dates = set(unique_dates.iloc[train_end:validation_end])
+    test_dates = set(unique_dates.iloc[validation_end:])
+    return {
+        "train": sorted_df.loc[sorted_df["date"].isin(train_dates)].copy(),
+        "validation": sorted_df.loc[sorted_df["date"].isin(validation_dates)].copy(),
+        "test": sorted_df.loc[sorted_df["date"].isin(test_dates)].copy(),
+    }
+
+
+def summarize_text_coverage(split_name: str, text_frame: pd.DataFrame, model_frame: pd.DataFrame) -> dict[str, object]:
+    if text_frame.empty:
+        return {
+            "split": split_name,
+            "article_count": 0,
+            "weekly_text_rows": 0,
+            "unique_tickers": 0,
+            "date_start": "",
+            "date_end": "",
+            "avg_articles_per_ticker": np.nan,
+            "matched_model_rows": 0,
+        }
+    article_count = int(pd.to_numeric(text_frame.get("article_count", 0), errors="coerce").fillna(0).sum())
+    matched = model_frame.merge(text_frame[["ticker", "date"]].drop_duplicates(), on=["ticker", "date"], how="inner")
+    unique_tickers = int(text_frame["ticker"].nunique())
+    return {
+        "split": split_name,
+        "article_count": article_count,
+        "weekly_text_rows": int(len(text_frame)),
+        "unique_tickers": unique_tickers,
+        "date_start": text_frame["date"].min().date().isoformat(),
+        "date_end": text_frame["date"].max().date().isoformat(),
+        "avg_articles_per_ticker": round(article_count / unique_tickers, 4) if unique_tickers else np.nan,
+        "matched_model_rows": int(len(matched)),
+    }
+
+
+def build_lda_topic_outputs(
+    paths: RawDataPaths,
+    config: CrashRiskConfig | None = None,
+    n_topics: int = 5,
+    top_words: int = 10,
+) -> dict[str, pd.DataFrame]:
+    config = config or CrashRiskConfig()
+    prepared = prepare_text_records(paths)
+    topic_columns = ["status", "source_file", "topic", "rank", "word", "weight"]
+    ticker_columns = [
+        "status",
+        "source_file",
+        "ticker",
+        "article_count",
+        "date_start",
+        "date_end",
+        "dominant_topic",
+        "topic_probability",
+    ]
+    if prepared["status"] != "ok":
+        row = prepared["status_row"]
+        return {
+            "topic_words": pd.DataFrame(
+                [
+                    {
+                        "status": row.get("status", "no_text_file"),
+                        "source_file": row.get("source_file", ""),
+                        "topic": "",
+                        "rank": "",
+                        "word": "",
+                        "weight": np.nan,
+                    }
+                ],
+                columns=topic_columns,
+            ),
+            "ticker_topics": pd.DataFrame(
+                [
+                    {
+                        "status": row.get("status", "no_text_file"),
+                        "source_file": row.get("source_file", ""),
+                        "ticker": "",
+                        "article_count": 0,
+                        "date_start": "",
+                        "date_end": "",
+                        "dominant_topic": "",
+                        "topic_probability": np.nan,
+                    }
+                ],
+                columns=ticker_columns,
+            ),
+        }
+
+    text_df = prepared["text_df"].copy()
+    source_file = prepared["text_path"].name
+    ticker_stop_words = set(text_df["ticker"].astype(str).str.lower().unique())
+    stop_words = BIGRAM_STOP_WORDS.union(ticker_stop_words)
+    vectorizer = CountVectorizer(
+        stop_words=sorted(stop_words),
+        max_features=2000,
+        token_pattern=r"(?u)\b[a-zA-Z][a-zA-Z]+\b",
+    )
+    try:
+        matrix = vectorizer.fit_transform(text_df["text"].fillna("").astype(str))
+    except ValueError:
+        return empty_lda_outputs("empty_vocabulary", source_file, topic_columns, ticker_columns)
+    if matrix.shape[1] == 0 or matrix.shape[0] == 0:
+        return empty_lda_outputs("empty_vocabulary", source_file, topic_columns, ticker_columns)
+
+    topic_count = max(1, min(n_topics, matrix.shape[0]))
+    lda = LatentDirichletAllocation(
+        n_components=topic_count,
+        random_state=config.random_state,
+        learning_method="batch",
+    )
+    doc_topics = lda.fit_transform(matrix)
+    terms = np.asarray(vectorizer.get_feature_names_out())
+
+    topic_rows: list[dict[str, object]] = []
+    for topic_idx, component in enumerate(lda.components_, start=1):
+        top_indices = np.argsort(component)[::-1][:top_words]
+        for rank, term_idx in enumerate(top_indices, start=1):
+            topic_rows.append(
+                {
+                    "status": "ok",
+                    "source_file": source_file,
+                    "topic": f"topic_{topic_idx}",
+                    "rank": rank,
+                    "word": str(terms[term_idx]),
+                    "weight": float(component[term_idx]),
+                }
+            )
+
+    topic_labels = [f"topic_{idx}" for idx in range(1, topic_count + 1)]
+    topic_frame = pd.DataFrame(doc_topics, columns=topic_labels)
+    topic_frame.insert(0, "ticker", text_df["ticker"].astype(str).str.upper().str.strip().to_numpy())
+    topic_frame.insert(1, "date", pd.to_datetime(text_df["date"], errors="coerce").to_numpy())
+    topic_means = topic_frame.groupby("ticker", as_index=False)[topic_labels].mean()
+    ticker_meta = (
+        topic_frame.groupby("ticker", as_index=False)
+        .agg(article_count=("ticker", "size"), date_start=("date", "min"), date_end=("date", "max"))
+    )
+    ticker_summary = ticker_meta.merge(topic_means, on="ticker", how="left")
+    ticker_summary["dominant_topic"] = ticker_summary[topic_labels].idxmax(axis=1)
+    ticker_summary["topic_probability"] = ticker_summary[topic_labels].max(axis=1)
+    ticker_summary.insert(0, "status", "ok")
+    ticker_summary.insert(1, "source_file", source_file)
+    ticker_summary["date_start"] = ticker_summary["date_start"].dt.date.astype(str)
+    ticker_summary["date_end"] = ticker_summary["date_end"].dt.date.astype(str)
+
+    return {
+        "topic_words": pd.DataFrame(topic_rows, columns=topic_columns),
+        "ticker_topics": ticker_summary[
+            ["status", "source_file", "ticker", "article_count", "date_start", "date_end", "dominant_topic", "topic_probability", *topic_labels]
+        ],
+    }
+
+
+def empty_lda_outputs(
+    status: str,
+    source_file: str,
+    topic_columns: list[str],
+    ticker_columns: list[str],
+) -> dict[str, pd.DataFrame]:
+    return {
+        "topic_words": pd.DataFrame(
+            [{"status": status, "source_file": source_file, "topic": "", "rank": "", "word": "", "weight": np.nan}],
+            columns=topic_columns,
+        ),
+        "ticker_topics": pd.DataFrame(
+            [
+                {
+                    "status": status,
+                    "source_file": source_file,
+                    "ticker": "",
+                    "article_count": 0,
+                    "date_start": "",
+                    "date_end": "",
+                    "dominant_topic": "",
+                    "topic_probability": np.nan,
+                }
+            ],
+            columns=ticker_columns,
+        ),
+    }
 
 
 def build_sql_summary(
@@ -350,47 +937,26 @@ def clean_sql(query: str) -> str:
 
 
 def build_textual_analysis(paths: RawDataPaths, config: CrashRiskConfig | None = None) -> pd.DataFrame:
+    return build_text_analysis_outputs(paths, config=config)["weekly"]
+
+
+def build_text_ticker_summary(paths: RawDataPaths, config: CrashRiskConfig | None = None) -> pd.DataFrame:
+    return build_text_analysis_outputs(paths, config=config)["ticker_summary"]
+
+
+def build_text_analysis_outputs(paths: RawDataPaths, config: CrashRiskConfig | None = None) -> dict[str, pd.DataFrame]:
     config = config or CrashRiskConfig()
-    text_path = discover_text_path(paths)
-    if text_path is None:
-        return pd.DataFrame(
-            [
-                {
-                    "status": "no_text_file",
-                    "note": "No controversy_text/news_text file found. Treat controversy_score as a vendor text-derived ESG signal until raw text is supplied.",
-                }
-            ]
-        )
+    prepared = prepare_text_records(paths)
+    if prepared["status"] != "ok":
+        status_row = pd.DataFrame([prepared["status_row"]])
+        return {"weekly": status_row.copy(), "ticker_summary": status_row.copy()}
 
-    text_df = read_tabular(text_path)
-    missing = [column for column in ("ticker", "date") if column not in text_df.columns]
-    text_columns = [column for column in TEXT_COLUMNS if column in text_df.columns]
-    if missing or not text_columns:
-        return pd.DataFrame(
-            [
-                {
-                    "status": "invalid_text_file",
-                    "source_file": text_path.name,
-                    "note": f"Missing required text columns: {', '.join(missing or ['one of ' + ', '.join(TEXT_COLUMNS)])}.",
-                }
-            ]
-        )
-
-    text_df = text_df.copy()
-    text_df["ticker"] = text_df["ticker"].astype(str).str.strip().str.upper()
-    text_df["date"] = pd.to_datetime(text_df["date"], errors="coerce")
-    text_df["text"] = text_df[text_columns].fillna("").astype(str).agg(" ".join, axis=1)
-    text_df = text_df.dropna(subset=["ticker", "date"])
-    text_df = text_df.loc[text_df["text"].str.strip().ne("")]
-    if text_df.empty:
-        return pd.DataFrame(
-            [{"status": "empty_text_file", "source_file": text_path.name, "note": "No usable text rows after parsing."}]
-        )
-
-    scored = text_df["text"].map(score_text)
-    scored_df = pd.DataFrame(scored.tolist(), index=text_df.index)
+    text_df = prepared["text_df"]
+    text_path = prepared["text_path"]
+    scored_df = pd.DataFrame(text_df["text"].map(score_text).tolist(), index=text_df.index)
     text_df = pd.concat([text_df, scored_df], axis=1)
     text_df["week_end"] = text_df["date"].dt.to_period(config.week_rule).dt.end_time.dt.normalize()
+
     weekly = (
         text_df.groupby(["ticker", "week_end"], as_index=False)
         .agg(
@@ -399,16 +965,30 @@ def build_textual_analysis(paths: RawDataPaths, config: CrashRiskConfig | None =
             negative_word_count=("negative_word_count", "sum"),
             positive_word_count=("positive_word_count", "sum"),
             controversy_keyword_count=("controversy_keyword_count", "sum"),
+            total_token_count=("token_count", "sum"),
+            negative_sentiment_intensity=("negative_sentiment_intensity", "mean"),
+            controversy_keyword_density=("controversy_keyword_density", "mean"),
+            news_pressure_component=("news_pressure_component", "mean"),
         )
         .sort_values(["ticker", "week_end"])
     )
+    weekly["negative_esg_controversy_score_0_100"] = weekly.apply(score_negative_esg_controversy, axis=1)
     weekly["rolling_sentiment_13w"] = weekly.groupby("ticker", sort=False)["text_sentiment_score"].transform(
         lambda series: series.rolling(13, min_periods=1).mean()
     )
+    weekly["score_band"] = weekly["negative_esg_controversy_score_0_100"].map(score_band)
     weekly.insert(0, "status", "ok")
     weekly.insert(1, "source_file", text_path.name)
     weekly = weekly.rename(columns={"week_end": "date"})
-    return weekly
+
+    ticker_summary = (
+        weekly.sort_values(["ticker", "date"])
+        .drop_duplicates("ticker", keep="last")
+        .rename(columns={"date": "latest_text_date"})
+        .sort_values(["negative_esg_controversy_score_0_100", "article_count", "ticker"], ascending=[False, False, True])
+        .reset_index(drop=True)
+    )
+    return {"weekly": weekly, "ticker_summary": ticker_summary}
 
 
 def discover_text_path(paths: RawDataPaths) -> Path | None:
@@ -421,6 +1001,69 @@ def discover_text_path(paths: RawDataPaths) -> Path | None:
     return None
 
 
+def prepare_text_records(paths: RawDataPaths) -> dict[str, object]:
+    text_path = discover_text_path(paths)
+    if text_path is None:
+        status_row = {
+            "status": "no_text_file",
+            "note": "No controversy_text/news_text file found. Treat controversy_score as a vendor text-derived ESG signal until raw text is supplied.",
+        }
+        return {"status": "no_text_file", "status_row": status_row}
+
+    text_df = harmonize_text_columns(read_tabular(text_path))
+    missing = [column for column in ("ticker", "date") if column not in text_df.columns]
+    text_columns = [column for column in TEXT_COLUMNS if column in text_df.columns]
+    if missing or not text_columns:
+        status_row = {
+            "status": "invalid_text_file",
+            "source_file": text_path.name,
+            "note": f"Missing required text columns: {', '.join(missing or ['one of ' + ', '.join(TEXT_COLUMNS)])}.",
+        }
+        return {"status": "invalid_text_file", "status_row": status_row}
+
+    text_df = text_df.copy()
+    text_df["ticker"] = text_df["ticker"].astype(str).str.strip().str.upper()
+    text_df["date"] = pd.to_datetime(text_df["date"], errors="coerce")
+    text_df["text"] = text_df[text_columns].fillna("").astype(str).agg(" ".join, axis=1)
+    source_column = "source" if "source" in text_df.columns else None
+    if source_column:
+        text_df["source"] = text_df["source"].astype(str).str.strip()
+    text_df = text_df.dropna(subset=["ticker", "date"])
+    text_df = text_df.loc[text_df["text"].str.strip().ne("")]
+    if text_df.empty:
+        status_row = {
+            "status": "empty_text_file",
+            "source_file": text_path.name,
+            "note": "No usable text rows after parsing.",
+        }
+        return {"status": "empty_text_file", "status_row": status_row}
+
+    columns = ["ticker", "date", "text"]
+    if source_column:
+        columns.append("source")
+    return {"status": "ok", "text_df": text_df[columns].copy(), "text_path": text_path}
+
+
+def harmonize_text_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    canonical_lookup: dict[str, str] = {}
+    for column in df.columns:
+        canonical_lookup.setdefault(canonicalize_name(column), column)
+
+    rename_map: dict[str, str] = {}
+    for canonical, aliases in TEXT_COLUMN_ALIASES.items():
+        for alias in aliases:
+            source = canonical_lookup.get(alias)
+            if source and source != canonical and canonical not in df.columns:
+                rename_map[source] = canonical
+                break
+    return df.rename(columns=rename_map)
+
+
+def canonicalize_name(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+
 def score_text(text: str) -> dict[str, float | int]:
     tokens = re.findall(r"[a-zA-Z]+", text.lower())
     if not tokens:
@@ -429,63 +1072,196 @@ def score_text(text: str) -> dict[str, float | int]:
             "negative_word_count": 0,
             "positive_word_count": 0,
             "controversy_keyword_count": 0,
+            "token_count": 0,
+            "negative_sentiment_intensity": 0.0,
+            "controversy_keyword_density": 0.0,
+            "news_pressure_component": 0.0,
         }
     negative = sum(token in NEGATIVE_WORDS for token in tokens)
     positive = sum(token in POSITIVE_WORDS for token in tokens)
     controversy = sum(token in CONTROVERSY_KEYWORDS for token in tokens)
+    token_count = len(tokens)
+    negative_sentiment_intensity = max(negative - positive, 0) / token_count
+    controversy_keyword_density = controversy / token_count
     return {
-        "text_sentiment_score": (positive - negative) / len(tokens),
+        "text_sentiment_score": (positive - negative) / token_count,
         "negative_word_count": int(negative),
         "positive_word_count": int(positive),
         "controversy_keyword_count": int(controversy),
+        "token_count": int(token_count),
+        "negative_sentiment_intensity": float(negative_sentiment_intensity),
+        "controversy_keyword_density": float(controversy_keyword_density),
+        "news_pressure_component": 1.0,
     }
 
 
-def write_text_word_cloud(paths: RawDataPaths, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text_path = discover_text_path(paths)
-    if text_path is None:
-        write_placeholder_svg(path, "Text word cloud", "No news_text or controversy_text file supplied.")
-        return
+def score_negative_esg_controversy(row: pd.Series) -> float:
+    negative_component = min(1.0, float(row.get("negative_sentiment_intensity", 0.0)) * 8.0)
+    controversy_component = min(1.0, float(row.get("controversy_keyword_density", 0.0)) * 10.0)
+    article_count = max(float(row.get("article_count", 0.0)), 0.0)
+    news_pressure_component = min(1.0, np.log1p(article_count) / np.log(6.0))
+    score = 100.0 * (
+        0.5 * negative_component
+        + 0.35 * controversy_component
+        + 0.15 * news_pressure_component
+    )
+    return round(score, 2)
 
-    text_df = read_tabular(text_path)
-    text_columns = [column for column in TEXT_COLUMNS if column in text_df.columns]
-    if not text_columns:
-        write_placeholder_svg(path, "Text word cloud", "Text file has no headline, description, body, text, or summary column.")
-        return
 
-    text = " ".join(text_df[text_columns].fillna("").astype(str).agg(" ".join, axis=1).tolist())
-    tokens = [
-        token
-        for token in re.findall(r"[a-zA-Z]+", text.lower())
-        if len(token) > 3 and token not in STOP_WORDS
-    ]
-    counts = Counter(tokens).most_common(28)
-    if not counts:
-        write_placeholder_svg(path, "Text word cloud", "No usable words after parsing the text file.")
-        return
+def score_band(score: float) -> str:
+    if score >= 67:
+        return "High"
+    if score >= 34:
+        return "Medium"
+    return "Low"
 
-    max_count = counts[0][1] or 1
-    width, height = 900, 360
-    rows = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-        '<rect width="100%" height="100%" fill="#ffffff"/>',
-        '<text x="24" y="34" font-family="Arial" font-size="20" font-weight="700" fill="#1a2025">Text word cloud</text>',
-    ]
-    x, y = 34, 86
-    for word, count in counts:
-        size = 14 + int((count / max_count) * 24)
-        word_width = max(70, len(word) * size * 0.6)
-        if x + word_width > width - 34:
-            x = 34
-            y += 48
-        fill = "#c0332e" if word in NEGATIVE_WORDS or word in CONTROVERSY_KEYWORDS else "#0d6b62"
-        rows.append(
-            f'<text x="{x:.0f}" y="{y:.0f}" font-family="Arial" font-size="{size}" font-weight="700" fill="{fill}">{escape(word)}</text>'
+
+def _write_placeholder_bigram_cloud(title: str, message: str, output_base: Path, colormap: str) -> None:
+    output_base.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(14, 7))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ax.axis("off")
+    ax.set_title(title, fontsize=20, pad=20)
+    ax.text(
+        0.5,
+        0.5,
+        message,
+        ha="center",
+        va="center",
+        fontsize=18,
+        color="#35524a" if colormap == "Greens" else "#6f2c2c",
+        transform=ax.transAxes,
+    )
+    fig.tight_layout()
+    fig.savefig(output_base.with_suffix(".png"), dpi=300, bbox_inches="tight")
+    fig.savefig(output_base.with_suffix(".svg"), dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def generate_bigram_wordcloud(
+    text_list: list[str],
+    title: str,
+    colormap: str,
+    output_base: Path,
+    stop_words: set[str],
+) -> pd.DataFrame:
+    output_base.parent.mkdir(parents=True, exist_ok=True)
+    if not text_list:
+        _write_placeholder_bigram_cloud(title, "No texts available to process for this sentiment bucket.", output_base, colormap)
+        return pd.DataFrame(columns=["bigram", "tfidf_weight"])
+
+    vectorizer = TfidfVectorizer(
+        stop_words=sorted(stop_words),
+        max_features=2000,
+        ngram_range=(2, 2),
+        token_pattern=r"(?u)\b[a-zA-Z][a-zA-Z]+\b",
+    )
+    try:
+        matrix = vectorizer.fit_transform(text_list)
+    except ValueError as exc:
+        _write_placeholder_bigram_cloud(title, f"Unable to build bigrams: {exc}", output_base, colormap)
+        return pd.DataFrame(columns=["bigram", "tfidf_weight"])
+
+    terms = vectorizer.get_feature_names_out()
+    mean_weights = np.asarray(matrix.mean(axis=0)).ravel()
+    freq_dict = dict(zip(terms, mean_weights))
+    if not freq_dict:
+        _write_placeholder_bigram_cloud(title, "No bigrams remained after filtering.", output_base, colormap)
+        return pd.DataFrame(columns=["bigram", "tfidf_weight"])
+
+    word_cloud = WordCloud(
+        width=1200,
+        height=600,
+        background_color="white",
+        max_words=100,
+        colormap=colormap,
+        collocations=False,
+        prefer_horizontal=0.96,
+        random_state=42,
+    ).generate_from_frequencies(freq_dict)
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    fig.patch.set_facecolor("white")
+    ax.imshow(word_cloud, interpolation="bilinear")
+    ax.axis("off")
+    ax.set_title(title, fontsize=20, pad=20)
+    fig.tight_layout()
+    fig.savefig(output_base.with_suffix(".png"), dpi=300, bbox_inches="tight")
+    fig.savefig(output_base.with_suffix(".svg"), dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    return (
+        pd.DataFrame({"bigram": terms, "tfidf_weight": mean_weights})
+        .sort_values("tfidf_weight", ascending=False)
+        .head(10)
+        .reset_index(drop=True)
+    )
+
+
+def write_text_bigram_wordclouds(paths: RawDataPaths, figures_dir: Path, top_terms_path: Path | None = None) -> pd.DataFrame:
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    prepared = prepare_text_records(paths)
+    if prepared["status"] != "ok":
+        message = str(prepared["status_row"].get("note", "No text file supplied."))
+        for output_base, title, colormap in (
+            (figures_dir / "bullish_signals_bigrams", "Bullish Signals: Positive Sentiment TF-IDF Bigrams (Filtered)", "Greens"),
+            (figures_dir / "bearish_signals_bigrams", "Bearish Signals: Negative Sentiment TF-IDF Bigrams (Filtered)", "Reds"),
+        ):
+            _write_placeholder_bigram_cloud(title, message, output_base, colormap)
+        top_terms = pd.DataFrame(columns=["sentiment_bucket", "bigram", "tfidf_weight"])
+    else:
+        text_df = prepared["text_df"].copy()
+        scored_df = pd.DataFrame(text_df["text"].map(score_text).tolist(), index=text_df.index)
+        text_df = pd.concat([text_df, scored_df], axis=1)
+        ticker_stop_words = set(text_df["ticker"].astype(str).str.lower().unique())
+        stop_words = BIGRAM_STOP_WORDS.union(ticker_stop_words)
+
+        positive_terms = generate_bigram_wordcloud(
+            text_df.loc[text_df["text_sentiment_score"] > 0, "text"].dropna().tolist(),
+            "Bullish Signals: Positive Sentiment TF-IDF Bigrams (Filtered)",
+            "Greens",
+            figures_dir / "bullish_signals_bigrams",
+            stop_words,
         )
-        x += word_width + 24
-    rows.append("</svg>")
-    path.write_text("\n".join(rows), encoding="utf-8")
+        positive_terms.insert(0, "sentiment_bucket", "bullish")
+
+        negative_terms = generate_bigram_wordcloud(
+            text_df.loc[text_df["text_sentiment_score"] < 0, "text"].dropna().tolist(),
+            "Bearish Signals: Negative Sentiment TF-IDF Bigrams (Filtered)",
+            "Reds",
+            figures_dir / "bearish_signals_bigrams",
+            stop_words,
+        )
+        negative_terms.insert(0, "sentiment_bucket", "bearish")
+        term_frames = [frame for frame in (positive_terms, negative_terms) if not frame.empty]
+        top_terms = (
+            pd.concat(term_frames, ignore_index=True)
+            if term_frames
+            else pd.DataFrame(columns=["sentiment_bucket", "bigram", "tfidf_weight"])
+        )
+
+    if top_terms_path is not None:
+        top_terms_path.parent.mkdir(parents=True, exist_ok=True)
+        top_terms.to_csv(top_terms_path, index=False)
+
+    primary_source = figures_dir / "bearish_signals_bigrams.svg"
+    if not primary_source.exists() or primary_source.stat().st_size == 0:
+        primary_source = figures_dir / "bullish_signals_bigrams.svg"
+    if primary_source.exists():
+        shutil.copyfile(primary_source, figures_dir / "text_word_cloud.svg")
+    return top_terms
+
+
+def write_text_word_cloud(paths: RawDataPaths, path: Path) -> None:
+    write_text_bigram_wordclouds(
+        paths=paths,
+        figures_dir=path.parent,
+        top_terms_path=path.parent.parent / "textual_bigram_terms.csv",
+    )
+    generated = path.parent / "text_word_cloud.svg"
+    if generated != path and generated.exists():
+        shutil.copyfile(generated, path)
 
 
 def write_report_figures(
@@ -495,6 +1271,9 @@ def write_report_figures(
     feature_importance: pd.DataFrame,
     model_comparison: pd.DataFrame,
     figures_dir: Path,
+    feature_correlation_matrix: pd.DataFrame | None = None,
+    calibration_curve: pd.DataFrame | None = None,
+    lda_ticker_topics: pd.DataFrame | None = None,
 ) -> None:
     figures_dir.mkdir(parents=True, exist_ok=True)
 
@@ -569,6 +1348,13 @@ def write_report_figures(
             value_prefix="$",
         )
 
+    if feature_correlation_matrix is not None and not feature_correlation_matrix.empty:
+        write_feature_correlation_heatmap(feature_correlation_matrix, figures_dir / "feature_correlation_heatmap.png")
+    if calibration_curve is not None and not calibration_curve.empty:
+        write_probability_calibration_plot(calibration_curve, figures_dir / "probability_calibration.png")
+    if lda_ticker_topics is not None and not lda_ticker_topics.empty:
+        write_lda_topic_distribution(lda_ticker_topics, figures_dir / "lda_topic_distribution.png")
+
 
 def write_bar_svg(
     path: Path,
@@ -630,6 +1416,154 @@ def write_line_svg(path: Path, title: str, labels: list[str], values: list[float
     path.write_text("\n".join(rows), encoding="utf-8")
 
 
+def write_feature_correlation_heatmap(correlation_matrix: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    corr = correlation_matrix.copy()
+    if "feature" in corr.columns:
+        corr = corr.set_index("feature")
+    corr = corr.apply(pd.to_numeric, errors="coerce")
+    if corr.empty:
+        write_placeholder_png(path, "Feature Correlation Heatmap", "No feature correlations available.")
+        return
+
+    labels = list(corr.index.astype(str))
+    values = corr.to_numpy(dtype=float)
+    fig, ax = plt.subplots(figsize=(12, 10))
+    im = ax.imshow(values, cmap="coolwarm", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=90, fontsize=7)
+    ax.set_yticklabels(labels, fontsize=7)
+    ax.set_title("Feature Correlation Heatmap")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Pearson correlation")
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_price_time_series(feature_panel: pd.DataFrame, scores: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if feature_panel.empty or "adj_close" not in feature_panel.columns or scores.empty:
+        write_placeholder_png(path, "Representative Price Time Series", "No price history available.")
+        return
+
+    high = (
+        scores.loc[scores["risk_bucket"].eq("High")]
+        .sort_values("crash_probability", ascending=False)
+        .head(2)["ticker"]
+        .tolist()
+    )
+    low = (
+        scores.loc[scores["risk_bucket"].eq("Low")]
+        .sort_values("crash_probability", ascending=True)
+        .head(2)["ticker"]
+        .tolist()
+    )
+    selected = list(dict.fromkeys([*high, *low]))
+    if len(selected) < 4:
+        fallback = scores.sort_values("crash_probability", ascending=False)["ticker"].tolist()
+        selected = list(dict.fromkeys([*selected, *fallback]))[:4]
+
+    panel = feature_panel.loc[feature_panel["ticker"].isin(selected)].copy()
+    panel["date"] = pd.to_datetime(panel["date"], errors="coerce")
+    panel = panel.dropna(subset=["date", "adj_close"]).sort_values(["ticker", "date"])
+    if panel.empty:
+        write_placeholder_png(path, "Representative Price Time Series", "No selected ticker prices available.")
+        return
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for ticker, group in panel.groupby("ticker", sort=False):
+        risk = scores.loc[scores["ticker"].eq(ticker), "risk_bucket"]
+        label = f"{ticker} ({risk.iloc[0] if not risk.empty else 'n/a'})"
+        ax.plot(group["date"], group["adj_close"], linewidth=1.8, label=label)
+    ax.set_title("Representative Adjusted Close Price Time Series")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Adjusted close")
+    ax.legend(ncol=2, fontsize=9)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_probability_calibration_plot(calibration_curve: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    required = {"mean_predicted_probability", "observed_crash_rate", "n_rows"}
+    if calibration_curve.empty or not required.issubset(calibration_curve.columns):
+        write_placeholder_png(path, "Probability Calibration", "No calibration data available.")
+        return
+    curve = calibration_curve.loc[pd.to_numeric(calibration_curve["n_rows"], errors="coerce").fillna(0) > 0].copy()
+    if curve.empty:
+        write_placeholder_png(path, "Probability Calibration", "No populated calibration bins.")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.plot([0, 1], [0, 1], color="#7f8c8d", linestyle=":", label="Perfect calibration")
+    ax.plot(
+        curve["mean_predicted_probability"],
+        curve["observed_crash_rate"],
+        marker="o",
+        color="#0d6b62",
+        linewidth=2,
+        label="Test bins",
+    )
+    for _, row in curve.iterrows():
+        ax.text(
+            row["mean_predicted_probability"],
+            row["observed_crash_rate"],
+            f"n={int(row['n_rows'])}",
+            fontsize=8,
+            ha="left",
+            va="bottom",
+        )
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("Mean predicted probability")
+    ax.set_ylabel("Observed crash rate")
+    ax.set_title("Predicted Probability Calibration")
+    ax.legend()
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_lda_topic_distribution(lda_ticker_topics: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if lda_ticker_topics.empty or "dominant_topic" not in lda_ticker_topics.columns or not lda_ticker_topics["status"].eq("ok").any():
+        write_placeholder_png(path, "LDA Topic Distribution", "No LDA topics available.")
+        return
+    counts = (
+        lda_ticker_topics.loc[lda_ticker_topics["status"].eq("ok"), "dominant_topic"]
+        .value_counts()
+        .sort_index()
+    )
+    if counts.empty:
+        write_placeholder_png(path, "LDA Topic Distribution", "No dominant topic assignments available.")
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    counts.plot(kind="bar", ax=ax, color="#0d6b62", edgecolor="white")
+    ax.set_title("Dominant LDA Topic by Ticker")
+    ax.set_xlabel("Dominant topic")
+    ax.set_ylabel("Ticker count")
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def write_placeholder_png(path: Path, title: str, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.axis("off")
+    ax.set_title(title)
+    ax.text(0.5, 0.5, message, ha="center", va="center", transform=ax.transAxes)
+    fig.tight_layout()
+    fig.savefig(path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def write_placeholder_svg(path: Path, title: str, message: str) -> None:
     width, height = 900, 220
     rows = [
@@ -685,7 +1619,7 @@ Use `outputs/textual_analysis.csv` and `outputs/figures/text_word_cloud.svg`. If
 Target: `high_crash_risk = 1` for stocks in the top 20% of future 13-week NCSKEW. Use chronological train/validation/test splits and report ROC-AUC, Precision@Top Bucket, and Crash Capture. {lift_text}
 
 ## 4. Business Analysis
-Use `outputs/business_analysis.csv` to discuss the economic value of excluding or reviewing High crash-risk names. Frame this as a risk overlay for a 1 billion dollar fund and compare estimated benefit with a 4-person implementation team.
+Use `outputs/business_analysis.csv` and `outputs/business_portfolio_returns.csv` to discuss the economic value of excluding or reviewing High crash-risk names. Frame this as a weekly forward risk overlay for a 1 billion dollar fund and compare estimated benefit with a 4-person implementation team.
 
 ## 5. Viva Slide Outline
 1. Problem and research question

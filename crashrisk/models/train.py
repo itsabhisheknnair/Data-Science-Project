@@ -21,12 +21,12 @@ _PARAM_GRIDS: dict[str, dict[str, list]] = {
         "classifier__penalty": ["l2"],
     },
     "random_forest": {
-        "classifier__n_estimators": [100, 200],
+        "classifier__n_estimators": [100],
         "classifier__max_depth": [3, 5, 8],
         "classifier__min_samples_leaf": [5, 10],
     },
     "gradient_boosting": {
-        "classifier__n_estimators": [100, 200],
+        "classifier__n_estimators": [100],
         "classifier__max_depth": [2, 3],
         "classifier__learning_rate": [0.05, 0.10],
     },
@@ -106,7 +106,7 @@ def _run_hyperparameter_search(
         param_grid,
         cv=tscv,
         scoring="roc_auc",
-        n_jobs=-1,
+        n_jobs=1,
         refit=True,
     )
     search.fit(X, y.astype(int))

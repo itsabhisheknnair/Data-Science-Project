@@ -94,6 +94,22 @@
           </label>
           <input id="rawControversies" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
 
+          <label class="file-card upload-card optional-upload-card" for="rawNewsText">
+            <span>Optional text</span>
+            <strong>news_text</strong>
+            <small>Bloomberg or generic news CSV/XLSX</small>
+            <em id="rawNewsTextStatus">No file selected</em>
+          </label>
+          <input id="rawNewsText" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
+          <label class="file-card upload-card optional-upload-card" for="rawControversyText">
+            <span>Optional text</span>
+            <strong>controversy_text</strong>
+            <small>Ticker, date, headline/body/summary</small>
+            <em id="rawControversyTextStatus">No file selected</em>
+          </label>
+          <input id="rawControversyText" class="visually-hidden" type="file" accept=".csv,.xlsx,.xls">
+
           <div class="api-actions">
             <label class="checkbox-label">
               <input id="apiTune" type="checkbox">
@@ -172,6 +188,14 @@
               <strong>controversies</strong>
               <a href="samples/controversies.csv" download>Download controversies.csv</a>
               <p>ESG controversy score by ticker/date/sector.</p>
+            </article>
+            <article>
+              <strong>news_text</strong>
+              <p>Optional text upload using Bloomberg or generic CSV/XLSX columns for ticker, date, and headline/body/summary text.</p>
+            </article>
+            <article>
+              <strong>controversy_text</strong>
+              <p>Optional controversy-focused news file used for the separate ESG text score, ticker ranking, and word cloud.</p>
             </article>
           </div>
         </div>
@@ -359,6 +383,69 @@
       </section>
 
       <!-- ── ESG lift comparison ───────────────────────────────────────── -->
+      <section class="comparison-section" aria-label="Latest model diagnostics" data-info-key="model-diagnostics">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Latest backend artifacts</p>
+            <h2>Model diagnostics</h2>
+          </div>
+          <p id="modelDiagnosticsStatus" class="status-text">Waiting for diagnostics.</p>
+        </div>
+        <p class="section-description">
+          Displays the latest tuning, text-signal, confusion-matrix, and probability-calibration outputs returned by the backend.
+        </p>
+        <div class="diagnostics-grid">
+          <article class="diagnostic-card">
+            <div class="text-panel-header">
+              <strong>Hyperparameter tuning</strong>
+              <span id="tuningBadge" class="evidence-badge"></span>
+            </div>
+            <div class="table-shell">
+              <table class="evidence-table">
+                <thead><tr><th>Model</th><th>Best params</th><th>CV AUC</th><th>CV std</th><th>Candidates</th></tr></thead>
+                <tbody id="tuningRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="diagnostic-card">
+            <div class="text-panel-header">
+              <strong>Text signal comparison</strong>
+              <span id="textModelBadge" class="evidence-badge"></span>
+            </div>
+            <div class="table-shell">
+              <table class="evidence-table">
+                <thead><tr><th>Model</th><th>Split</th><th>Text rows</th><th>ROC-AUC</th><th>Precision</th><th>Capture</th></tr></thead>
+                <tbody id="textModelRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="diagnostic-card">
+            <div class="text-panel-header">
+              <strong>Confusion matrix</strong>
+              <span id="confusionBadge" class="evidence-badge"></span>
+            </div>
+            <div class="table-shell">
+              <table class="evidence-table">
+                <thead><tr><th>Threshold</th><th>TP</th><th>FP</th><th>TN</th><th>FN</th><th>Precision</th><th>Recall</th></tr></thead>
+                <tbody id="confusionRows"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="diagnostic-card">
+            <div class="text-panel-header">
+              <strong>Calibration curve</strong>
+              <span id="calibrationBadge" class="evidence-badge"></span>
+            </div>
+            <div class="table-shell">
+              <table class="evidence-table">
+                <thead><tr><th>Bin</th><th>N</th><th>Mean predicted</th><th>Observed</th></tr></thead>
+                <tbody id="calibrationRows"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section class="comparison-section" aria-label="ESG model comparison" data-info-key="esg-validation">
         <div class="section-heading">
           <div>
@@ -427,7 +514,84 @@
         </div>
       </section>
 
+      <!-- ── Q4 2024 Out-of-Sample Backtest ────────────────────────────── -->
+      <section id="quarterBacktestSection" class="comparison-section" aria-label="Q4 2024 out-of-sample backtest" data-info-key="quarter-backtest" style="display:none">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Section 4b &mdash; True out-of-sample validation</p>
+            <h2>Q4 2024 Quarter Backtest</h2>
+          </div>
+          <p id="quarterBtStatus" class="status-text">Run the backend to populate quarter backtest.</p>
+        </div>
+        <p class="section-description">
+          The model was trained <strong>exclusively on pre-Q4 2024 data</strong>. At the end of Q3 2024
+          (Sep 27) it flagged the top 20% of stocks as High Risk and excluded them.
+          The chart below shows what actually happened during Q4 2024 — data the model never saw.
+          This is the clearest test of whether the ESG crash-risk signal works.
+        </p>
+
+        <!-- Hero metrics -->
+        <div class="biz-summary-grid" id="quarterBtHero"></div>
+
+        <!-- Dual charts: cumulative return + excluded stocks bar -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:1.5rem 0;">
+          <div id="quarterReturnChart" class="quarter-chart-panel"></div>
+          <div id="quarterExcludedBarChart" class="quarter-chart-panel"></div>
+        </div>
+
+        <!-- Excluded stocks table -->
+        <h3 style="margin:1.25rem 0 0.5rem; font-size:1rem; font-weight:600;">
+          Stocks Flagged as High Risk (excluded from strategy)
+        </h3>
+        <p style="font-size:0.82rem; color:#555; margin:0 0 0.75rem;">
+          Green row = model correctly avoided a falling stock &nbsp;|&nbsp; Red row = model missed a rising stock
+        </p>
+        <div class="table-shell">
+          <table id="quarterExcludedTable">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Crash Probability</th>
+                <th>Actual Q4 Return</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- ── FDS Project Evidence ─────────────────────────────────────── -->
+      <section class="comparison-section text-analytics-section" aria-label="Text analytics" data-info-key="text-analytics">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Separate ESG news monitor</p>
+            <h2>Text analytics</h2>
+          </div>
+          <p id="textAnalyticsStatus" class="status-text">Upload optional text files to score ESG-negative coverage.</p>
+        </div>
+        <p class="section-description">
+          Tracks how much negative ESG controversy news is coming through the uploaded text feed for each ticker.
+        </p>
+        <div id="textAnalyticsSummary" class="text-analytics-summary-grid"></div>
+        <div class="text-analytics-grid">
+          <div class="text-word-cloud-panel">
+            <div class="text-panel-header">
+              <strong>Word cloud</strong>
+              <span id="textWordCloudStatus" class="status-text">Loads from generated backend output.</span>
+            </div>
+            <div id="textWordCloudContent" class="text-word-cloud-content"></div>
+          </div>
+          <div class="text-ticker-panel">
+            <div class="text-panel-header">
+              <strong>Ticker ranking</strong>
+              <span id="textAnalyticsBadge" class="evidence-badge"></span>
+            </div>
+            <div id="textTickerSummaryContent"></div>
+          </div>
+        </div>
+      </section>
+
       <section class="comparison-section" aria-label="FDS project evidence" data-info-key="fds-evidence">
         <div class="section-heading">
           <div>
@@ -473,6 +637,22 @@
             <span class="evidence-badge" id="textualAnalysisBadge"></span>
           </summary>
           <div id="textualAnalysisContent" class="evidence-card-body"></div>
+        </details>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>Feature Descriptive Statistics</strong>
+            <span class="evidence-badge" id="featureStatsBadge"></span>
+          </summary>
+          <div id="featureStatsContent" class="evidence-card-body"></div>
+        </details>
+
+        <details class="evidence-details">
+          <summary class="evidence-summary">
+            <strong>Text Coverage and LDA</strong>
+            <span class="evidence-badge" id="textCoverageBadge"></span>
+          </summary>
+          <div id="textCoverageContent" class="evidence-card-body"></div>
         </details>
 
         <p class="evidence-subsection-label">Report Figures</p>
